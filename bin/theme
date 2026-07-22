@@ -627,6 +627,26 @@ def _kde_rgb(c):     # "#1e1e2e" -> "30,30,46"
     return f"{int(c[0:2],16)},{int(c[2:4],16)},{int(c[4:6],16)}"
 
 
+# papirus-folders named colors -> a representative hex, for nearest-match
+_PAPIRUS = {
+    "black": "4d4d4d", "blue": "5294e2", "bluegrey": "607d8b", "breeze": "4d8bca",
+    "brown": "8d6e63", "carmine": "b71c1c", "cyan": "00bcd4", "darkcyan": "00838f",
+    "deeporange": "ff7043", "green": "66bb6a", "grey": "9e9e9e", "indigo": "5c6bc0",
+    "magenta": "e91e63", "nordic": "81a1c1", "orange": "ff9800", "palebrown": "a1887f",
+    "paleorange": "ffb74d", "pink": "f06292", "red": "e53935", "teal": "009688",
+    "violet": "7e57c2", "white": "e0e0e0", "yellow": "ffb300",
+}
+
+
+def _papirus_color(hexstr):
+    """Nearest papirus-folders color name to an accent hex (RGB distance)."""
+    c = hexstr.lstrip("#")
+    ar, ag, ab = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+    def dist(v):
+        return (int(v[0:2], 16) - ar) ** 2 + (int(v[2:4], 16) - ag) ** 2 + (int(v[4:6], 16) - ab) ** 2
+    return min(_PAPIRUS, key=lambda name: dist(_PAPIRUS[name]))
+
+
 def gen_kde(r, s, dark):
     """Plasma color scheme -> ~/.local/share/color-schemes + apply it."""
     K = _kde_rgb
@@ -783,6 +803,15 @@ def reload():
         preset = os.path.join(CFG, "oomox", "colors", "theme-engine")
         run("oomox-cli", preset)            # builds+installs oomox-theme-engine
         name = "oomox-theme-engine"
+        # icons: recolor Papirus folders to the nearest accent color (oomox's
+        # own icon recolor is unreliable) and use that as the icon theme.
+        icon_name = "Papirus-Dark"
+        try:
+            at = json.load(open(os.path.join(THEME_DIR, (active() or "") + ".json")))
+            run("papirus-folders", "-C", _papirus_color(at["roles"]["accent"]),
+                "-t", icon_name)
+        except (OSError, ValueError, KeyError):
+            pass
         # GTK/Cinnamon/XFCE also cache by theme NAME; the name is unchanged
         # between switches, so toggle to another theme then back to force a
         # re-read of the rebuilt files.
@@ -800,9 +829,9 @@ def reload():
             set_theme(schema, key, "Adwaita"); set_theme(schema, key, name)
         set_theme("org.cinnamon.theme", "name", "cinnamon"); set_theme("org.cinnamon.theme", "name", name)
         for schema, key in icon_targets:
-            set_theme(schema, key, "hicolor"); set_theme(schema, key, name)
+            set_theme(schema, key, "hicolor"); set_theme(schema, key, icon_name)
         xf("/Net/ThemeName", "Adwaita"); xf("/Net/ThemeName", name)
-        xf("/Net/IconThemeName", "hicolor"); xf("/Net/IconThemeName", name)
+        xf("/Net/IconThemeName", "hicolor"); xf("/Net/IconThemeName", icon_name)
         # DE-agnostic path (KDE ignores gsettings): write GTK's own settings.ini
         # so GTK apps pick the theme + icons in ANY session on next launch.
         for ver in ("gtk-3.0", "gtk-4.0"):
@@ -815,19 +844,18 @@ def reload():
                     if k == "gtk-theme-name":
                         ln = f"gtk-theme-name={name}\n"; seen.add(k)
                     elif k == "gtk-icon-theme-name":
-                        ln = f"gtk-icon-theme-name={name}\n"; seen.add(k)
+                        ln = f"gtk-icon-theme-name={icon_name}\n"; seen.add(k)
                     lines.append(ln)
             if "[Settings]" not in "".join(lines):
                 lines.insert(0, "[Settings]\n")
             if "gtk-theme-name" not in seen:
                 lines.insert(1, f"gtk-theme-name={name}\n")
             if "gtk-icon-theme-name" not in seen:
-                lines.insert(1, f"gtk-icon-theme-name={name}\n")
+                lines.insert(1, f"gtk-icon-theme-name={icon_name}\n")
             write(sp, "".join(lines))
-        # KDE/Qt icon theme + refresh the icon cache so folders repaint
-        run("kwriteconfig5", "--group", "Icons", "--key", "Theme", name)
-        run("kwriteconfig6", "--group", "Icons", "--key", "Theme", name)
-        run("gtk-update-icon-cache", "-f", os.path.join(HOME, ".icons", name))
+        # KDE/Qt icon theme (Papirus, recolored above)
+        run("kwriteconfig5", "--group", "Icons", "--key", "Theme", icon_name)
+        run("kwriteconfig6", "--group", "Icons", "--key", "Theme", icon_name)
     if "firefox" in tg:
         run("pywalfox", "update")           # push palette to Firefox chrome+pages
 
