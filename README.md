@@ -1,7 +1,7 @@
 # themes
 
 A portable, JSON-driven **theme engine** for a Wayland/Hyprland desktop. One
-command re-skins **Hyprland + Waybar + kitty + starship** at once — colors,
+command re-skins **Hyprland + Waybar + kitty + starship + Neovim** at once — colors,
 blur, shadows, corner radius, gaps *and* a matching generated wallpaper — all
 from a single `theme.json` per theme.
 
@@ -26,6 +26,7 @@ themes/<name>.json ──► ~/.config/hypr/generated/theme.conf     (borders, b
                   ├──► ~/.config/waybar/generated/theme.css     (@define-color …)
                   ├──► ~/.config/kitty/generated/theme.conf      (bg/fg + 16 ANSI colors)
                   ├──► ~/.config/starship.toml                   (prompt palette)
+                  ├──► ~/.config/nvim/lua/generated_theme.lua  (Neovim colorscheme)
                   └──► ~/.config/hypr/wallpapers/<name>.png       (via wallgen)
 ```
 …then live-reloads each app. Nothing under `generated/` is hand-edited.
