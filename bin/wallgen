@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""wallgen — generate a soft "blurry blob" wallpaper from a theme's palette.
+
+    wallgen                 # (re)generate wallpapers for ALL themes
+    wallgen <name>          # just one theme
+    wallgen <name> --set    # generate it and set it live via hyprpaper
+
+Reads ~/.config/hypr/themes/<name>.json, paints big blurred color blobs from
+the theme's accent colors over a subtle background gradient, and writes
+~/.config/hypr/wallpapers/<name>.png (2560x1440). Deterministic per theme.
+
+Only dependency: Pillow  (pacman -S python-pillow).
+"""
+import json, os, sys, glob, random, math, subprocess
+from PIL import Image, ImageDraw, ImageFilter
+
+HOME = os.path.expanduser("~")
+CFG = os.path.join(HOME, ".config")
+THEME_DIR = os.path.join(CFG, "hypr", "themes")
+WALL_DIR = os.path.join(CFG, "hypr", "wallpapers")
+W, H = 2560, 1440
+
+
+def hex2rgb(c):
+    c = c.lstrip("#")
+    return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def lerp(a, b, t):
+    return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
+
+
+def clamp(v, lo=0, hi=255):
+    return max(lo, min(hi, int(v)))
+
+
+def shade(rgb, f):
+    """f<0 darken toward black, f>0 lighten toward white."""
+    if f >= 0:
+        return tuple(clamp(rgb[i] + (255 - rgb[i]) * f) for i in range(3))
+    return tuple(clamp(rgb[i] * (1 + f)) for i in range(3))
+
+
+def gradient_bg(top, bottom):
+    base = Image.new("RGB", (W, H))
+    px = base.load()
+    # vertical gradient, computed per-row then written (fast enough at 1440p)
+    for y in range(H):
+        t = y / (H - 1)
+        col = lerp(top, bottom, t)
+        for x in range(W):
+            px[x, y] = col
+    return base
+
+
+def make(name, roles, dark):
+    rnd = random.Random(hash(name) & 0xffffffff)
+    bg = hex2rgb(roles["bg"])
+    bg2 = hex2rgb(roles.get("bg_alt", roles["bg"]))
+
+    # background: gentle diagonal-ish gradient between the two darkest surfaces
+    top = shade(bg, 0.04 if dark else -0.02)
+    bot = shade(bg2, -0.06 if dark else -0.03)
+    base = gradient_bg(top, bot).convert("RGBA")
+
+    # candidate blob colors: the theme's accents (deduped, order-stable)
+    picks = ["focus", "accent", "accent2", "ansi_blue", "ansi_magenta",
+             "ansi_cyan", "ansi_green", "urgent"]
+    seen, colors = set(), []
+    for k in picks:
+        v = roles.get(k)
+        if v and v.lower() not in seen:
+            seen.add(v.lower()); colors.append(hex2rgb(v))
+    if not colors:
+        colors = [hex2rgb(roles["accent"])]
+
+    # blob layer, painted then blurred for that dreamy falloff
+    n = 7
+    blobs = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    for i in range(n):
+        col = colors[i % len(colors)]
+        # brighten blobs a touch on dark themes so they glow off the bg
+        col = shade(col, 0.10 if dark else -0.05)
+        r = rnd.randint(420, 820)
+        cx = rnd.randint(int(-W * 0.1), int(W * 1.1))
+        cy = rnd.randint(int(-H * 0.1), int(H * 1.1))
+        alpha = rnd.randint(90, 165)
+        layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(layer)
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=col + (alpha,))
+        layer = layer.filter(ImageFilter.GaussianBlur(r * 0.42))
+        blobs = Image.alpha_composite(blobs, layer)
+
+    # one more soft blur to melt the blobs together
+    blobs = blobs.filter(ImageFilter.GaussianBlur(60))
+    img = Image.alpha_composite(base, blobs)
+
+    # subtle vignette to keep edges calm
+    vig = Image.new("L", (W, H), 0)
+    dv = ImageDraw.Draw(vig)
+    dv.ellipse([-W * 0.25, -H * 0.25, W * 1.25, H * 1.25], fill=255)
+    vig = vig.filter(ImageFilter.GaussianBlur(300))
+    dark_layer = Image.new("RGBA", (W, H), (0, 0, 0, 90 if dark else 40))
+    img = Image.composite(img, Image.alpha_composite(img, dark_layer), vig)
+
+    os.makedirs(WALL_DIR, exist_ok=True)
+    out = os.path.join(WALL_DIR, name + ".png")
+    img.convert("RGB").save(out)
+    return out
+
+
+def load(name):
+    p = os.path.join(THEME_DIR, name + ".json")
+    if not os.path.exists(p):
+        sys.exit(f"wallgen: unknown theme '{name}'")
+    t = json.load(open(p))
+    return t["roles"], t.get("dark", True)
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    setflag = "--set" in sys.argv[1:]
+    names = args or sorted(os.path.splitext(os.path.basename(p))[0]
+                           for p in glob.glob(os.path.join(THEME_DIR, "*.json")))
+    out = None
+    for nm in names:
+        roles, dark = load(nm)
+        out = make(nm, roles, dark)
+        print("wrote", out)
+    if setflag and out and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        subprocess.run(["hyprctl", "hyprpaper", "unload", "all"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["hyprctl", "hyprpaper", "preload", out],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["hyprctl", "hyprpaper", "wallpaper", f",{out}"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+if __name__ == "__main__":
+    main()
