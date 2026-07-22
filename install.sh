@@ -11,6 +11,8 @@ cp "$REPO"/wallpapers/*.png      "$CFG/hypr/wallpapers/" 2>/dev/null || true
 for t in theme theme-new theme-menu wallgen; do
     install -m755 "$REPO/bin/$t" "$HOME/.local/bin/$t"
 done
+mkdir -p "$CFG/theme-engine"
+[ -f "$CFG/theme-engine/targets.conf" ] || cp "$REPO/targets.conf.example" "$CFG/theme-engine/targets.conf"
 echo "Installed $(ls "$REPO"/themes/*.json | wc -l) themes + generators."
 echo "Ensure ~/.local/bin is on PATH, then run:  theme <name>"
 echo "wallgen needs python-pillow:  sudo pacman -S python-pillow"

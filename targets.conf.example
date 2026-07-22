@@ -1,0 +1,13 @@
+# Enabled theme targets (one per line). Comment out to disable.
+hypr
+waybar
+kitty
+starship
+nvim
+wallpaper
+wofi
+rofi
+dunst
+hyprlock
+# obsidian=~/Documents/Obsidian Vault
+# firefox

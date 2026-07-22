@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""theme-uninstall — revert everything the theme engine touched.
+
+Removes generated files, strips injected @import lines (restoring .bak backups),
+and reverts DE state. Leaves your original configs as they were.
+"""
+import os, glob, shutil, subprocess, json
+HOME = os.path.expanduser("~"); CFG = os.path.join(HOME, ".config")
+
+def rm(p):
+    try: os.remove(p); print("  removed", p)
+    except OSError: pass
+
+def restore(p):
+    baks = sorted(glob.glob(p + ".bak-*"))
+    if baks:
+        shutil.move(baks[-1], p); print("  restored", p)
+        for b in baks[:-1]: rm(b)
+
+def strip_line(p, needle):
+    if not os.path.exists(p): return
+    lines = [l for l in open(p) if needle not in l]
+    open(p, "w").writelines(lines); print("  cleaned", p)
+
+# generated files
+for f in ["hypr/generated/theme.conf", "waybar/generated/theme.css",
+          "kitty/generated/theme.conf", "nvim/lua/generated_theme.lua",
+          "wofi/colors.css", "rofi/theme-engine.rasi", "oomox/colors/theme-engine"]:
+    rm(os.path.join(CFG, f))
+rm(os.path.join(HOME, ".local/share/color-schemes/ThemeEngine.colors"))
+# injected imports (restore backups where we had them)
+strip_line(os.path.join(CFG, "wofi/style.css"), '@import "colors.css"')
+strip_line(os.path.join(CFG, "rofi/config.rasi"), "theme-engine.rasi")
+for ver in ("gtk-3.0", "gtk-4.0"):
+    p = os.path.join(CFG, ver, "gtk.css")
+    if os.path.exists(p):
+        import re; s = re.sub(r"/\* THEME-ENGINE-START \*/.*?/\* THEME-ENGINE-END \*/\n?", "", open(p).read(), flags=re.S)
+        open(p, "w").write(s); print("  cleaned", p)
+# restore backed-up whole-file configs
+for f in ["dunst/dunstrc"]:
+    restore(os.path.join(CFG, f))
+# revert DE
+for cmd in (["plasma-apply-colorscheme", "BreezeDark"],
+            ["gsettings", "reset", "org.gnome.desktop.interface", "gtk-theme"]):
+    try: subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError: pass
+print("Done. Firefox userChrome.css and Obsidian snippet (if used) can be deleted manually.")
