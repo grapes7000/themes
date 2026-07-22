@@ -775,19 +775,59 @@ def reload():
     # --- host desktop-environment apply (only if those targets are enabled) ---
     tg = load_targets()
     if "kde" in tg:
+        # re-applying the SAME scheme name won't refresh (Plasma caches by
+        # name) — bounce off a stock scheme first to force a reload.
+        run("plasma-apply-colorscheme", "BreezeDark")
         run("plasma-apply-colorscheme", "ThemeEngine")
     if "oomox" in tg and shutil.which("oomox-cli"):
         preset = os.path.join(CFG, "oomox", "colors", "theme-engine")
         run("oomox-cli", preset)            # builds+installs oomox-theme-engine
         name = "oomox-theme-engine"
-        run("gsettings", "set", "org.gnome.desktop.interface", "gtk-theme", name)
-        run("gsettings", "set", "org.cinnamon.desktop.interface", "gtk-theme", name)
-        run("gsettings", "set", "org.cinnamon.theme", "name", name)
-        run("xfconf-query", "-c", "xsettings", "-p", "/Net/ThemeName", "-s", name)
-        # oomox also builds a recolored icon theme of the same name — apply it
-        run("gsettings", "set", "org.gnome.desktop.interface", "icon-theme", name)
-        run("gsettings", "set", "org.cinnamon.desktop.interface", "icon-theme", name)
-        run("xfconf-query", "-c", "xsettings", "-p", "/Net/IconThemeName", "-s", name)
+        # GTK/Cinnamon/XFCE also cache by theme NAME; the name is unchanged
+        # between switches, so toggle to another theme then back to force a
+        # re-read of the rebuilt files.
+        def set_theme(schema, key, val):
+            run("gsettings", "set", schema, key, val)
+        def xf(prop, val):
+            run("xfconf-query", "-c", "xsettings", "-p", prop, "-s", val)
+        gtk_targets = [("org.gnome.desktop.interface", "gtk-theme"),
+                       ("org.cinnamon.desktop.interface", "gtk-theme"),
+                       ("org.mate.interface", "gtk-theme")]
+        icon_targets = [("org.gnome.desktop.interface", "icon-theme"),
+                        ("org.cinnamon.desktop.interface", "icon-theme"),
+                        ("org.mate.interface", "icon-theme")]
+        for schema, key in gtk_targets:
+            set_theme(schema, key, "Adwaita"); set_theme(schema, key, name)
+        set_theme("org.cinnamon.theme", "name", "cinnamon"); set_theme("org.cinnamon.theme", "name", name)
+        for schema, key in icon_targets:
+            set_theme(schema, key, "hicolor"); set_theme(schema, key, name)
+        xf("/Net/ThemeName", "Adwaita"); xf("/Net/ThemeName", name)
+        xf("/Net/IconThemeName", "hicolor"); xf("/Net/IconThemeName", name)
+        # DE-agnostic path (KDE ignores gsettings): write GTK's own settings.ini
+        # so GTK apps pick the theme + icons in ANY session on next launch.
+        for ver in ("gtk-3.0", "gtk-4.0"):
+            sp = os.path.join(CFG, ver, "settings.ini")
+            lines, seen = [], set()
+            if os.path.exists(sp):
+                backup_once(sp)
+                for ln in open(sp):
+                    k = ln.split("=", 1)[0].strip()
+                    if k == "gtk-theme-name":
+                        ln = f"gtk-theme-name={name}\n"; seen.add(k)
+                    elif k == "gtk-icon-theme-name":
+                        ln = f"gtk-icon-theme-name={name}\n"; seen.add(k)
+                    lines.append(ln)
+            if "[Settings]" not in "".join(lines):
+                lines.insert(0, "[Settings]\n")
+            if "gtk-theme-name" not in seen:
+                lines.insert(1, f"gtk-theme-name={name}\n")
+            if "gtk-icon-theme-name" not in seen:
+                lines.insert(1, f"gtk-icon-theme-name={name}\n")
+            write(sp, "".join(lines))
+        # KDE/Qt icon theme + refresh the icon cache so folders repaint
+        run("kwriteconfig5", "--group", "Icons", "--key", "Theme", name)
+        run("kwriteconfig6", "--group", "Icons", "--key", "Theme", name)
+        run("gtk-update-icon-cache", "-f", os.path.join(HOME, ".icons", name))
     if "firefox" in tg:
         run("pywalfox", "update")           # push palette to Firefox chrome+pages
 
