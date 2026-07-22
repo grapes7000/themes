@@ -9,6 +9,8 @@ from a single `theme.json` per theme.
 sharp themes get tight gaps and no blur; glassy themes get heavy blur and big
 radius; light themes get subtle shadows.
 
+**New here? Start with the [TUTORIAL](TUTORIAL.md).**
+
 ---
 
 ## The idea
