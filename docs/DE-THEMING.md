@@ -5,6 +5,12 @@ The engine is **opt-in per target** via `~/.config/theme-engine/targets.conf`
 targets are touched. Everything is written to dedicated generated files that the
 app `@import`s — originals are backed up and `theme-uninstall` reverts it all.
 
+`install.sh` auto-generates this file the first install, based on your
+detected desktop (Hyprland/KDE/XFCE/GNOME-family) and which app binaries are
+on `PATH` — e.g. a KDE machine gets `kitty` + `kde` enabled, not the
+Hyprland-only targets. It's a starting point, not a ceiling: uncomment any
+other line below to enable it by hand.
+
 ## Targets
 
 | Target | App | Notes |

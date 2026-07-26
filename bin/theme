@@ -184,6 +184,8 @@ def gen_kitty(r, s):
             backup_once(kc)
             with open(kc, "a") as f:
                 f.write(f"\n# theme-engine colors (managed by `theme`)\n{inc}\n")
+    else:
+        write(kc, f"# theme-engine colors (managed by `theme`)\n{inc}\n")
 
 
 def gen_wallpaper(name):

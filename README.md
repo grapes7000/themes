@@ -45,6 +45,11 @@ cd ~/themes
 ./install.sh          # copies themes/ + wallpapers/ into ~/.config/hypr, bin/ into ~/.local/bin
 theme catppuccin_mocha
 ```
+`install.sh` detects your desktop (Hyprland / KDE / XFCE / GNOME-family) and
+writes a matching `~/.config/theme-engine/targets.conf` the first time it
+runs, enabling only the targets whose apps it actually finds on `PATH`. It
+won't touch that file again once it exists — edit it by hand to add/remove
+targets later (full list: [docs/DE-THEMING.md](docs/DE-THEMING.md)).
 Requires `python-pillow` for wallgen (`sudo pacman -S python-pillow`). The
 generators are pure Python 3 + Pillow — no other deps.
 

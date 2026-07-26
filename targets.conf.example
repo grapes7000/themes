@@ -1,4 +1,7 @@
 # Enabled theme targets (one per line). Comment out to disable.
+# install.sh no longer copies this file -- it auto-detects your desktop and
+# writes sensible defaults instead. This is now just a manual reference/
+# kitchen-sink template (Hyprland-flavored) if you want to hand-roll one.
 hypr
 waybar
 kitty
