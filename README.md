@@ -68,7 +68,9 @@ Make sure `~/.local/bin` is on your PATH (`fish_add_path -g ~/.local/bin` for fi
 |---|---|
 | `theme` | List all themes (marks the active one with `*`) |
 | `theme <name>` | Switch theme — regenerate everything + live reload |
+| `theme starship` | Regenerate only Starship for the active theme |
 | `theme --list` | Bare list of names (for scripting) |
+| `starship-config` | Open the shared Starship prompt dashboard |
 | `theme-new <name>` | Create a new theme, scaffolded from `catppuccin_mocha` |
 | `theme-new <name> --from <base>` | …scaffold from a different theme |
 | `theme-new <name> --edit` | …and open it in `$EDITOR` |
@@ -117,6 +119,26 @@ theme always produces the same wallpaper.
   emits a 2560×1440 wallpaper. Useful outside Hyprland entirely.
 - The **`theme.json` format** is a portable palette description — you can target
   new apps by adding a `gen_*` function to `bin/theme`.
+
+### Prompt
+
+Starship is the sole prompt engine. Each theme generates a palette-aware,
+two-line prompt with a softened left edge and connected powerline arrows:
+
+```text
+ 󰉋  ~/code/project   main +1 ~2 
+❯
+```
+
+The branch and compact Git-status details appear only inside a Git repository;
+a clean repository retains its connected branch segment without status symbols.
+Outside a repository, the path segment closes with its own arrow. Long-running
+commands and background jobs also show compact Nerd Font indicators when active.
+Run `starship-config` to edit the shared prompt layout, path, Git, marker, and
+conditional-indicator settings. It saves one profile at
+`~/.config/theme-engine/starship.json`; every theme uses that profile with its
+own palette. The dashboard’s Save action regenerates only the active Starship
+configuration. Hand-authored Starship configurations remain untouched.
 
 ---
 

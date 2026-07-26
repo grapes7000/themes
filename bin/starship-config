@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+import curses
+import os
+import subprocess
+import sys
+
+from theme_starship import DEFAULT, PROFILE_PATH, profile, save
+
+SECTIONS = (
+    ("Style", ("prompt_style",)),
+    ("Layout", ("lead_fade", "lead_arrow", "git_connector", "git_end", "path_end")),
+    ("Path", ("path_icon", "path_length", "path_repo_root")),
+    ("Git", ("branch_enabled", "branch_icon", "state_enabled", "state_icon", "status_enabled", "status_conflicted", "status_ahead", "status_behind", "status_diverged", "status_untracked", "status_stashed", "status_modified", "status_staged", "status_renamed", "status_deleted")),
+    ("Prompt", ("success_symbol", "error_symbol", "vim_symbol")),
+    ("Indicators", ("duration_enabled", "duration_icon", "duration_min_ms", "jobs_enabled", "jobs_icon",
+                     "cmd_status_enabled", "cmd_status_icon", "battery_enabled", "memory_enabled",
+                     "memory_threshold", "time_enabled")),
+    ("Modules", ("os_enabled", "dev_enabled", "container_enabled", "cloud_enabled")),
+)
+LABELS = {
+    "prompt_style": "Prompt style",
+    "lead_fade": "Faded left glyph", "lead_arrow": "Lead arrow", "git_connector": "Git connector",
+    "git_end": "Git end arrow", "path_end": "Path end arrow", "path_icon": "Path icon",
+    "path_length": "Path components", "path_repo_root": "Trim to repository", "branch_enabled": "Show branch",
+    "branch_icon": "Branch icon", "state_enabled": "Show Git state", "state_icon": "State icon",
+    "status_enabled": "Show Git status", "status_conflicted": "Conflict symbol", "status_ahead": "Ahead symbol", "status_behind": "Behind symbol", "status_diverged": "Diverged symbol", "status_untracked": "Untracked symbol", "status_stashed": "Stashed symbol", "status_modified": "Modified symbol", "status_staged": "Staged symbol", "status_renamed": "Renamed symbol", "status_deleted": "Deleted symbol", "success_symbol": "Success marker", "error_symbol": "Error marker",
+    "vim_symbol": "Vim marker", "duration_enabled": "Show command duration", "duration_icon": "Duration icon",
+    "duration_min_ms": "Duration threshold (ms)", "jobs_enabled": "Show jobs", "jobs_icon": "Jobs icon",
+    "cmd_status_enabled": "Show failed command status", "cmd_status_icon": "Status icon",
+    "battery_enabled": "Show battery", "memory_enabled": "Show memory usage",
+    "memory_threshold": "Memory threshold (%)", "time_enabled": "Show clock",
+    "os_enabled": "Show OS icon / user@host", "dev_enabled": "Show language versions (Python, Node, Rust, ...)",
+    "container_enabled": "Show Docker / Kubernetes context", "cloud_enabled": "Show Terraform / Nix / cloud CLIs",
+}
+PRESETS = {
+    "Rounded powerline": {"lead_fade": "", "lead_arrow": "", "git_connector": "", "git_end": "", "path_end": ""},
+    "Classic powerline": {"lead_fade": "", "lead_arrow": "", "git_connector": "", "git_end": "", "path_end": ""},
+    "Soft separators": {"lead_fade": "", "lead_arrow": "", "git_connector": "", "git_end": "", "path_end": ""},
+    "Minimal chevrons": {"lead_fade": "", "lead_arrow": "", "git_connector": "", "git_end": "", "path_end": ""},
+}
+CHOICES = {
+    "prompt_style": tuple(PRESETS),
+    "lead_fade": ("", "", ""), "lead_arrow": ("", ""),
+    "git_connector": ("", ""), "git_end": ("", "", ""),
+    "path_end": ("", "", ""), "path_icon": ("󰉋", "", "󰉖"),
+    "path_length": (3, 6, 9, 12), "branch_icon": ("", "", "󰊢"),
+    "state_icon": ("󰘬", "󰁔", "󰄬"), "success_symbol": ("❯", "➜", "󰄛"),
+    "error_symbol": ("❯", "✗", "󰅚"), "vim_symbol": ("❮", "󰘳"),
+    "duration_icon": ("󰔛", "󰅐", "󱎫"), "duration_min_ms": (500, 2000, 5000, 10000),
+    "jobs_icon": ("󰜎", "󰘧", "󰙨"),
+    "cmd_status_icon": ("󰅙", "✘", "󰅚"), "memory_threshold": (50, 65, 75, 85),
+}
+
+
+def edit(stdscr, label, value):
+    height, width = stdscr.getmaxyx()
+    prompt = f"Edit {label} (current: {value})"
+    stdscr.addstr(height - 2, 0, prompt[:width - 1], curses.A_BOLD)
+    stdscr.clrtoeol()
+    stdscr.addstr(height - 1, 0, "> ")
+    stdscr.clrtoeol()
+    stdscr.move(height - 1, 2)
+    curses.curs_set(1)
+    curses.echo()
+    try:
+        raw = stdscr.getstr(height - 1, 2, width - 3).decode().strip()
+    finally:
+        curses.noecho()
+        curses.curs_set(0)
+    if not raw:
+        return value
+    if isinstance(value, int):
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return value
+    return raw
+
+
+def cycle(field, value):
+    choices = CHOICES.get(field)
+    if not choices:
+        return value
+    try:
+        return choices[(choices.index(value) + 1) % len(choices)]
+    except ValueError:
+        return choices[0]
+
+
+def draw(stdscr, values, section, row, notice):
+    stdscr.erase()
+    height, width = stdscr.getmaxyx()
+    stdscr.addstr(0, 0, "Starship configuration dashboard", curses.A_BOLD)
+    stdscr.addstr(1, 0, "Arrows: move  Enter: choose/toggle  e: custom value  s: save  q: cancel")
+    name, keys = SECTIONS[section]
+    for index, (title, _) in enumerate(SECTIONS):
+        style = curses.A_REVERSE if index == section else 0
+        stdscr.addstr(3 + index, 0, title[:18], style)
+    stdscr.addstr(3, 22, name, curses.A_BOLD)
+    first = max(0, row - (height - 12))
+    for index, key in enumerate(keys[first:], first):
+        if 5 + index - first >= height - 6:
+            break
+        value = "on" if values[key] is True else "off" if values[key] is False else str(values[key])
+        style = curses.A_REVERSE if index == row else 0
+        stdscr.addstr(5 + index - first, 22, f"{LABELS[key]}: {value}"[:width - 23], style)
+    preview = f"{values['lead_fade']}{values['lead_arrow']}  {values['path_icon']}  ~/code/project {values['git_connector']} {values['branch_icon']} main ~2 {values['git_end']}"
+    stdscr.addstr(height - 5, 0, "LIVE PREVIEW (updates after each edit)", curses.A_BOLD)
+    stdscr.addstr(height - 4, 0, preview[:width - 1])
+    stdscr.addstr(height - 3, 0, f"Profile: {PROFILE_PATH}"[:width - 1])
+    stdscr.addstr(height - 1, 0, notice[:width - 1])
+    stdscr.refresh()
+
+
+def run(stdscr):
+    curses.curs_set(0)
+    values = profile()
+    section = row = 0
+    notice = "Changes apply to every theme after Save."
+    while True:
+        draw(stdscr, values, section, row, notice)
+        key = stdscr.getch()
+        name, keys = SECTIONS[section]
+        if key in (ord("q"), 27):
+            return 0
+        if key in (curses.KEY_LEFT, ord("h")):
+            section = (section - 1) % len(SECTIONS); row = 0
+        elif key in (curses.KEY_RIGHT, ord("l")):
+            section = (section + 1) % len(SECTIONS); row = 0
+        elif key in (curses.KEY_UP, ord("k")):
+            row = (row - 1) % len(keys)
+        elif key in (curses.KEY_DOWN, ord("j")):
+            row = (row + 1) % len(keys)
+        elif key in (10, 13, ord(" ")):
+            field = keys[row]
+            values[field] = not values[field] if isinstance(values[field], bool) else cycle(field, values[field])
+            if field == "prompt_style":
+                values.update(PRESETS[values[field]])
+                notice = f"{values[field]} applied. Adjust Layout only for a custom mix."
+            else:
+                notice = f"{LABELS[field]} changed. Press e only for a custom value."
+        elif key == ord("e"):
+            field = keys[row]
+            if not isinstance(values[field], bool):
+                values[field] = edit(stdscr, LABELS[field], values[field])
+        elif key == ord("r"):
+            for field in keys: values[field] = DEFAULT[field]
+            notice = f"{name} reset."
+        elif key == ord("d"):
+            values = dict(DEFAULT); notice = "All settings reset."
+        elif key == ord("s"):
+            save(values)
+            command = os.path.join(os.path.dirname(os.path.abspath(__file__)), "theme")
+            result = subprocess.run([command, "starship"], text=True, capture_output=True)
+            return result.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(curses.wrapper(run))

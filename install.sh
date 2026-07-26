@@ -5,12 +5,21 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
 
+ensure_shell_path() {
+    local file="$1" line='export PATH="$HOME/.local/bin:$PATH"'
+    touch "$file"
+    grep -Fqx "$line" "$file" || printf '\n%s\n' "$line" >> "$file"
+}
+
 mkdir -p "$CFG/hypr/themes" "$CFG/hypr/wallpapers" "$CFG/hypr/generated" "$HOME/.local/bin"
 cp "$REPO"/themes/*.json         "$CFG/hypr/themes/"
 cp "$REPO"/wallpapers/*.png      "$CFG/hypr/wallpapers/" 2>/dev/null || true
-for t in theme theme-new theme-menu wallgen; do
+for t in theme theme-new theme-menu wallgen starship-config; do
     install -m755 "$REPO/bin/$t" "$HOME/.local/bin/$t"
 done
+install -m644 "$REPO/bin/theme_starship.py" "$HOME/.local/bin/theme_starship.py"
+ensure_shell_path "$HOME/.zshrc"
+ensure_shell_path "$HOME/.bashrc"
 
 has() { command -v "$1" >/dev/null 2>&1; }
 
@@ -188,5 +197,5 @@ if [ ! -f "$CFG/theme-engine/targets.conf" ]; then
     echo "Detected desktop: $de -- wrote $CFG/theme-engine/targets.conf (edit anytime)."
 fi
 echo "Installed $(ls "$REPO"/themes/*.json | wc -l) themes + generators."
-echo "Ensure ~/.local/bin is on PATH, then run:  theme <name>"
+echo "Added ~/.local/bin to zsh and bash startup files; open a new shell, then run: theme <name>"
 echo "wallgen needs python-pillow:  sudo pacman -S python-pillow"
