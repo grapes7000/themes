@@ -5,7 +5,7 @@ command re-skins **Hyprland + Waybar + kitty + starship + Neovim** at once — c
 blur, shadows, corner radius, gaps *and* a matching generated wallpaper — all
 from a single `theme.json` per theme.
 
-**28 themes included.** Each carries its own look-and-feel, not just colors:
+**36 themes included.** Each carries its own look-and-feel, not just colors:
 sharp themes get tight gaps and no blur; glassy themes get heavy blur and big
 radius; light themes get subtle shadows.
 
@@ -79,15 +79,17 @@ Make sure `~/.local/bin` is on your PATH (`fish_add_path -g ~/.local/bin` for fi
 
 ---
 
-## The 28 themes
+## The 36 themes
 
 **Dark:** catppuccin_mocha · catppuccin_macchiato · catppuccin_frappe ·
 dracula · tokyonight · tokyonight-storm · everforest-dark · kanagawa ·
-kanagawa-wave · onedark · material · nord · gruvbox · monokai · solarized-dark ·
-hacker-pink · y2k
+kanagawa-wave · kanagawa-dragon · onedark · material · nord · gruvbox ·
+gruvbox-material · monokai · solarized-dark · rose-pine · rose-pine-moon ·
+ayu-dark · ayu-mirage · oxocarbon · hacker-pink · y2k
 
 **Light:** catppuccin_latte · dracula-light · tokyonight-day · everforest-light ·
-material-lighter · gruvbox-light · solarized-light · cappuccino · cyber-green
+material-lighter · gruvbox-light · solarized-light · rose-pine-dawn ·
+cappuccino · cyber-green
 
 **Specials:** `ios-glassy` (frosted-glass morphism — heavy blur, big radius) ·
 `vintage-mac` (retro boxy — no blur, small radius) · `y2k` (sharp, neon,
