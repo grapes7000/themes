@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+import curses
+import os
+import subprocess
+import sys
+import unicodedata
+
+from theme_starship import DEFAULT, PROFILE_PATH, profile, save
+
+
+SECTIONS = (
+    ("Style", ("prompt_style",)),
+    ("System identity", ("os_enabled",)),
+    ("Workspace", ("path_icon", "path_length", "path_repo_root", "branch_enabled", "branch_icon", "state_enabled", "state_icon", "status_enabled", "status_conflicted", "status_ahead", "status_behind", "status_diverged", "status_untracked", "status_stashed", "status_modified", "status_staged", "status_renamed", "status_deleted")),
+    ("Context", ("dev_enabled", "container_enabled", "cloud_enabled")),
+    ("Right prompt", ("duration_enabled", "duration_icon", "duration_min_ms", "cmd_status_enabled", "cmd_status_icon", "jobs_enabled", "jobs_icon", "battery_enabled", "memory_enabled", "memory_threshold", "time_enabled")),
+    ("Prompt marker", ("success_symbol", "error_symbol", "vim_symbol")),
+    ("Advanced", ("lead_fade", "lead_arrow", "git_connector", "git_end", "path_end")),
+)
+
+LABELS = {
+    "prompt_style": "V2 workspace profile",
+    "os_enabled": "Show OS icon (user and SSH host stay visible)",
+    "path_icon": "Directory icon", "path_length": "Directory components", "path_repo_root": "Trim path to repository",
+    "branch_enabled": "Show Git branch", "branch_icon": "Git branch icon", "state_enabled": "Show Git operation state", "state_icon": "Git state icon", "status_enabled": "Show Git status", "status_conflicted": "Conflict symbol", "status_ahead": "Ahead symbol", "status_behind": "Behind symbol", "status_diverged": "Diverged symbol", "status_untracked": "Untracked symbol", "status_stashed": "Stashed symbol", "status_modified": "Modified symbol", "status_staged": "Staged symbol", "status_renamed": "Renamed symbol", "status_deleted": "Deleted symbol",
+    "dev_enabled": "Show development language context", "container_enabled": "Show Docker and Kubernetes context", "cloud_enabled": "Show infrastructure and cloud context",
+    "duration_enabled": "Show command duration", "duration_icon": "Duration icon", "duration_min_ms": "Duration threshold (ms)", "cmd_status_enabled": "Show failed-command status", "cmd_status_icon": "Failed-command icon", "jobs_enabled": "Show background jobs", "jobs_icon": "Jobs icon", "battery_enabled": "Show battery", "memory_enabled": "Show memory usage", "memory_threshold": "Memory threshold (%)", "time_enabled": "Show clock",
+    "success_symbol": "Success marker", "error_symbol": "Error marker", "vim_symbol": "Vim marker",
+    "lead_fade": "Left cap", "lead_arrow": "Identity-to-directory divider", "git_connector": "Directory-to-Git divider", "git_end": "Git closing cap", "path_end": "Non-Git path closing cap",
+}
+
+PRESETS = {
+    "Powerlevel10k workspace": dict(DEFAULT, prompt_style="Powerlevel10k workspace"),
+    "Focused development": dict(DEFAULT, prompt_style="Focused development", container_enabled=False, cloud_enabled=False, battery_enabled=False, memory_enabled=False, time_enabled=False),
+    "Minimal status": dict(DEFAULT, prompt_style="Minimal status", dev_enabled=False, container_enabled=False, cloud_enabled=False, duration_enabled=False, cmd_status_enabled=False, jobs_enabled=False, battery_enabled=False, memory_enabled=False, time_enabled=False),
+}
+
+CHOICES = {
+    "prompt_style": tuple(PRESETS),
+    "lead_fade": ("", "", ""), "lead_arrow": ("", ""),
+    "git_connector": ("", ""), "git_end": ("", "", ""),
+    "path_end": ("", "", ""), "path_icon": ("󰉋", "", "󰉖"),
+    "path_length": (3, 6, 9, 12), "branch_icon": ("", "", "󰊢"),
+    "state_icon": ("󰘬", "󰁔", "󰄬"), "success_symbol": ("❯", "➜", "󰄛"),
+    "error_symbol": ("❯", "✗", "󰅚"), "vim_symbol": ("❮", "󰘳"),
+    "duration_icon": ("󰔛", "󰅐", "󱎫"), "duration_min_ms": (500, 2000, 5000, 10000),
+    "jobs_icon": ("󰜎", "󰘧", "󰙨"), "cmd_status_icon": ("󰅙", "✘", "󰅚"), "memory_threshold": (50, 65, 75, 85),
+}
+
+
+def edit(stdscr, label, value):
+    height, width = stdscr.getmaxyx()
+    prompt = f"Edit {label} (current: {value})"
+    stdscr.addstr(height - 2, 0, prompt[:width - 1], curses.A_BOLD)
+    stdscr.clrtoeol()
+    stdscr.addstr(height - 1, 0, "> ")
+    stdscr.clrtoeol()
+    stdscr.move(height - 1, 2)
+    curses.curs_set(1)
+    curses.echo()
+    try:
+        raw = stdscr.getstr(height - 1, 2, width - 3).decode().strip()
+    finally:
+        curses.noecho()
+        curses.curs_set(0)
+    if not raw:
+        return value
+    if isinstance(value, int):
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return value
+    return raw
+
+
+def cycle(field, value):
+    choices = CHOICES.get(field)
+    if not choices:
+        return value
+    try:
+        return choices[(choices.index(value) + 1) % len(choices)]
+    except ValueError:
+        return choices[0]
+
+
+def segment(enabled, text):
+    return text if enabled else ""
+
+
+def cell_width(text):
+    return sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in text)
+
+
+def clip_cells(text, width):
+    if cell_width(text) <= width:
+        return text
+    if width <= 0:
+        return ""
+    clipped = ""
+    for char in text:
+        if cell_width(clipped) + cell_width(char) >= width:
+            return f"{clipped}…" if width > 1 else "…"
+        clipped += char
+    return clipped
+
+
+def preview_lines(values):
+    identity = f"{segment(values['os_enabled'], ' ')}user@ssh-host"
+    workspace = f"{values['path_icon']} ~/code/project"
+    git = " ".join(part for part in (
+        segment(values["branch_enabled"], f"{values['branch_icon']} main"),
+        segment(values["state_enabled"], f"{values['state_icon']} rebase"),
+        segment(values["status_enabled"], f"{values['status_ahead']}2 {values['status_modified']}1"),
+    ) if part)
+    context = " ".join(part for part in (
+        segment(values["dev_enabled"], " 3.13"),
+        segment(values["container_enabled"], " docker"),
+        segment(values["cloud_enabled"], "󱁢 aws"),
+    ) if part)
+    left = "  ".join(part for part in (identity, workspace, git, context) if part)
+    right = " ".join(part for part in (
+        segment(values["duration_enabled"], f"{values['duration_icon']} 2s"),
+        segment(values["cmd_status_enabled"], f"{values['cmd_status_icon']} 1"),
+        segment(values["jobs_enabled"], f"{values['jobs_icon']} 2"),
+        segment(values["battery_enabled"], "󰂄 82%"),
+        segment(values["memory_enabled"], "󰍛 76%"),
+        segment(values["time_enabled"], " 10:42 AM"),
+    ) if part)
+    second = f"╰─ {values['success_symbol']} success   ╰─ {values['error_symbol']} error   ╰─ {values['vim_symbol']} vim"
+    return left, right, second
+
+
+def draw(stdscr, values, section, row, notice):
+    stdscr.erase()
+    height, width = stdscr.getmaxyx()
+    stdscr.addstr(0, 0, clip_cells("Starship v2 prompt dashboard", width - 1), curses.A_BOLD)
+    stdscr.addstr(1, 0, clip_cells("Arrows: move  Enter: choose/toggle  e: custom value  s: save  q: cancel", width - 1))
+    name, keys = SECTIONS[section]
+    for index, (title, _) in enumerate(SECTIONS):
+        if 3 + index >= height - 1:
+            break
+        style = curses.A_REVERSE if index == section else 0
+        stdscr.addstr(3 + index, 0, clip_cells(title, 20), style)
+    if width > 22 and height > 3:
+        stdscr.addstr(3, 22, clip_cells(name, width - 23), curses.A_BOLD)
+    show_preview = height >= 18
+    content_bottom = height - 9 if show_preview else height - 2
+    visible_rows = max(1, content_bottom - 5)
+    first = max(0, row - visible_rows + 1)
+    for index, key in enumerate(keys[first:], first):
+        if 5 + index - first >= content_bottom:
+            break
+        value = "on" if values[key] is True else "off" if values[key] is False else str(values[key])
+        style = curses.A_REVERSE if index == row else 0
+        if width > 22:
+            stdscr.addstr(5 + index - first, 22, clip_cells(f"{LABELS[key]}: {value}", width - 23), style)
+    if show_preview:
+        left, right, marker = preview_lines(values)
+        right_width = cell_width(right)
+        left_width = max(0, width - right_width - 5) if right else width - 1
+        stdscr.addstr(height - 7, 0, clip_cells("LIVE V2 PREVIEW (left prompt and right indicators)", width - 1), curses.A_BOLD)
+        stdscr.addstr(height - 6, 0, clip_cells(left, left_width))
+        if right and right_width < width:
+            stdscr.addstr(height - 6, width - right_width - 1, right)
+        stdscr.addstr(height - 5, 0, clip_cells(marker, width - 1))
+        stdscr.addstr(height - 3, 0, clip_cells(f"Shared profile: {PROFILE_PATH}", width - 1))
+    stdscr.addstr(height - 1, 0, clip_cells(notice, width - 1))
+    stdscr.refresh()
+
+
+def run(stdscr):
+    curses.curs_set(0)
+    values = profile()
+    if values["prompt_style"] not in PRESETS:
+        values["prompt_style"] = "Powerlevel10k workspace"
+    section = row = 0
+    notice = "V2 layout is shared across themes; each active theme supplies its own palette."
+    while True:
+        draw(stdscr, values, section, row, notice)
+        key = stdscr.getch()
+        name, keys = SECTIONS[section]
+        if key in (ord("q"), 27):
+            return 0
+        if key in (curses.KEY_LEFT, ord("h")):
+            section = (section - 1) % len(SECTIONS); row = 0
+        elif key in (curses.KEY_RIGHT, ord("l")):
+            section = (section + 1) % len(SECTIONS); row = 0
+        elif key in (curses.KEY_UP, ord("k")):
+            row = (row - 1) % len(keys)
+        elif key in (curses.KEY_DOWN, ord("j")):
+            row = (row + 1) % len(keys)
+        elif key in (10, 13, ord(" ")):
+            field = keys[row]
+            values[field] = not values[field] if isinstance(values[field], bool) else cycle(field, values[field])
+            if field == "prompt_style":
+                values.update(PRESETS[values[field]])
+                notice = f"{values[field]} restored its complete v2 profile."
+            else:
+                notice = f"{LABELS[field]} changed. Press e to enter a custom value."
+        elif key == ord("e"):
+            field = keys[row]
+            if not isinstance(values[field], bool):
+                values[field] = edit(stdscr, LABELS[field], values[field])
+        elif key == ord("r"):
+            if name == "Style":
+                values.update(PRESETS["Powerlevel10k workspace"])
+            else:
+                for field in keys:
+                    values[field] = DEFAULT[field]
+            notice = f"{name} reset to the renderer's v2 defaults."
+        elif key == ord("d"):
+            values = dict(PRESETS["Powerlevel10k workspace"])
+            notice = "Powerlevel10k workspace restored."
+        elif key == ord("s"):
+            save(values)
+            command = os.path.join(os.path.dirname(os.path.abspath(__file__)), "theme")
+            result = subprocess.run([command, "starship"], text=True, capture_output=True)
+            return result.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(curses.wrapper(run))
