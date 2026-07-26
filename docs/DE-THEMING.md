@@ -16,6 +16,7 @@ other line below to enable it by hand.
 | Target | App | Notes |
 |---|---|---|
 | hypr, waybar, kitty, starship, nvim, wallpaper | core Hyprland desktop | live reload |
+| zsh | oh-my-zsh | generates a custom `theme-engine` zsh-theme + sets `ZSH_THEME` once (won't fight a later manual switch). Open a new terminal or run `exec zsh` to see it — no live reload |
 | wofi / rofi | launchers | `@import` a generated colors file. rofi also themes **rofi-rbw** (Bitwarden) and every rofi menu |
 | dunst | notifications | full `dunstrc` generated (original backed up) |
 | hyprlock | lock screen | live |

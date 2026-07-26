@@ -14,6 +14,54 @@ done
 
 has() { command -v "$1" >/dev/null 2>&1; }
 
+# Package name -> binary name, where they differ (pacman pkg "neovim" -> bin "nvim").
+pkg_bin() { case "$1" in neovim) echo nvim ;; *) echo "$1" ;; esac; }
+
+# Install whatever's missing among the tools this DE would enable, plus
+# zsh + oh-my-zsh (not DE-specific). Always confirms before touching the
+# system; never installs on a non-interactive run.
+maybe_install_packages() {
+    local de="$1"
+    local want=(kitty starship neovim zsh)
+    [ "$de" = hyprland ] && want+=(waybar wofi dunst hyprlock)
+
+    local missing=()
+    for pkg in "${want[@]}"; do
+        has "$(pkg_bin "$pkg")" || missing+=("$pkg")
+    done
+    local need_omz=0
+    [ -d "$HOME/.oh-my-zsh" ] || need_omz=1
+
+    { [ ${#missing[@]} -eq 0 ] && [ "$need_omz" -eq 0 ]; } && return
+
+    echo
+    echo "Can install to fully match your terminal setup:"
+    [ ${#missing[@]} -gt 0 ] && echo "  pacman:    ${missing[*]}"
+    [ "$need_omz" -eq 1 ] && echo "  oh-my-zsh: via the official installer (ohmyzsh/ohmyzsh)"
+
+    if [ ! -t 0 ]; then
+        echo "Not an interactive terminal -- skipping. Re-run install.sh directly to install."
+        return
+    fi
+    read -rp "Install now? [y/N] " reply
+    case "$reply" in
+        y|Y|yes|YES)
+            if [ ${#missing[@]} -gt 0 ]; then
+                sudo pacman -S --needed "${missing[@]}" || echo "pacman install failed -- continuing anyway."
+            fi
+            if [ "$need_omz" -eq 1 ]; then
+                RUNZSH=no CHSH=no KEEP_ZSHRC=yes sh -c \
+                  "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" \
+                  "" --unattended \
+                  || echo "oh-my-zsh install failed -- continuing anyway."
+            fi
+            ;;
+        *)
+            echo "Skipped. Re-run install.sh anytime to retry."
+            ;;
+    esac
+}
+
 # Detect the running desktop so targets.conf only enables what's actually
 # usable on this machine -- a fresh clone on KDE should not default to
 # Hyprland-only targets (and vice versa).
@@ -49,6 +97,7 @@ write_targets_conf() {
                 opt kitty kitty
                 opt starship starship
                 opt nvim nvim
+                opt zsh zsh
                 opt wallpaper hyprpaper
                 opt wofi wofi
                 has wofi || opt rofi rofi
@@ -63,6 +112,7 @@ write_targets_conf() {
                 opt kitty kitty
                 opt starship starship
                 opt nvim nvim
+                opt zsh zsh
                 opt kde plasma-apply-colorscheme
                 echo "# hypr"
                 echo "# waybar"
@@ -79,6 +129,7 @@ write_targets_conf() {
                 opt kitty kitty
                 opt starship starship
                 opt nvim nvim
+                opt zsh zsh
                 echo xfce
                 if has oomox-cli; then echo oomox; else echo "# oomox"; echo gtk; fi
                 echo "# hypr"
@@ -94,6 +145,7 @@ write_targets_conf() {
                 opt kitty kitty
                 opt starship starship
                 opt nvim nvim
+                opt zsh zsh
                 if has oomox-cli; then echo oomox; else echo "# oomox"; echo gtk; fi
                 echo "# hypr"
                 echo "# waybar"
@@ -109,6 +161,7 @@ write_targets_conf() {
                 opt kitty kitty
                 opt starship starship
                 opt nvim nvim
+                opt zsh zsh
                 echo "# hypr"
                 echo "# waybar"
                 echo "# wallpaper"
@@ -130,6 +183,7 @@ write_targets_conf() {
 mkdir -p "$CFG/theme-engine"
 if [ ! -f "$CFG/theme-engine/targets.conf" ]; then
     de="$(detect_de)"
+    maybe_install_packages "$de"
     write_targets_conf "$de"
     echo "Detected desktop: $de -- wrote $CFG/theme-engine/targets.conf (edit anytime)."
 fi

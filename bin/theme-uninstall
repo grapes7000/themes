@@ -28,6 +28,8 @@ for f in ["hypr/generated/theme.conf", "waybar/generated/theme.css",
           "wofi/colors.css", "rofi/theme-engine.rasi", "oomox/colors/theme-engine"]:
     rm(os.path.join(CFG, f))
 rm(os.path.join(HOME, ".local/share/color-schemes/ThemeEngine.colors"))
+rm(os.path.join(HOME, ".oh-my-zsh/custom/themes/theme-engine.zsh-theme"))
+restore(os.path.join(HOME, ".zshrc"))
 # injected imports (restore backups where we had them)
 strip_line(os.path.join(CFG, "wofi/style.css"), '@import "colors.css"')
 strip_line(os.path.join(CFG, "rofi/config.rasi"), "theme-engine.rasi")

@@ -28,6 +28,7 @@ themes/<name>.json ──► ~/.config/hypr/generated/theme.conf     (borders, b
                   ├──► ~/.config/waybar/generated/theme.css     (@define-color …)
                   ├──► ~/.config/kitty/generated/theme.conf      (bg/fg + 16 ANSI colors)
                   ├──► ~/.config/starship.toml                   (prompt palette)
+                  ├──► ~/.oh-my-zsh/custom/themes/theme-engine.zsh-theme  (oh-my-zsh prompt)
                   ├──► ~/.config/nvim/lua/generated_theme.lua  (Neovim colorscheme)
                   └──► ~/.config/hypr/wallpapers/<name>.png       (via wallgen)
 ```
@@ -50,6 +51,10 @@ writes a matching `~/.config/theme-engine/targets.conf` the first time it
 runs, enabling only the targets whose apps it actually finds on `PATH`. It
 won't touch that file again once it exists — edit it by hand to add/remove
 targets later (full list: [docs/DE-THEMING.md](docs/DE-THEMING.md)).
+If any of kitty/starship/neovim/zsh (+ waybar/wofi/dunst/hyprlock on
+Hyprland) or oh-my-zsh are missing, it also offers — with a single y/N
+prompt, never silently — to `pacman install` them and run oh-my-zsh's
+official installer.
 Requires `python-pillow` for wallgen (`sudo pacman -S python-pillow`). The
 generators are pure Python 3 + Pillow — no other deps.
 

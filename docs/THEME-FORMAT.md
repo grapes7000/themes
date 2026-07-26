@@ -85,6 +85,8 @@ Running `theme <name>` writes (never edit these by hand):
 - `~/.config/kitty/generated/theme.conf` — `background`/`foreground` + the 16
   `color0..15` ANSI entries + `font_size`.
 - `~/.config/starship.toml` — a `[palettes.theme]` block + prompt styling.
+- `~/.oh-my-zsh/custom/themes/theme-engine.zsh-theme` — an oh-my-zsh prompt
+  theme (only if oh-my-zsh is installed; `ZSH_THEME` is set to it once).
 - `~/.config/nvim/lua/generated_theme.lua` — a full Neovim colorscheme (base
   highlight groups + treesitter `@capture` links) built from the palette.
 - `~/.config/hypr/wallpapers/<name>.png` — via `wallgen`.
