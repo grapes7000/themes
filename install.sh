@@ -199,6 +199,9 @@ if [ ! -f "$CFG/theme-engine/targets.conf" ]; then
     write_targets_conf "$de"
     echo "Detected desktop: $de -- wrote $CFG/theme-engine/targets.conf (edit anytime)."
 fi
+
 echo "Installed $(ls "$REPO"/themes/*.json | wc -l) themes + generators."
-echo "Added ~/.local/bin to zsh and bash startup files; open a new shell, then run: theme <name>"
+echo "Added ~/.local/bin to zsh and bash startup files. Open a new shell, then run:"
+echo "  Apply desktop theme:  theme <name>"
+echo "  Update Firefox:       theme-pywalfox <name>"
 echo "wallgen needs python-pillow:  sudo pacman -S python-pillow"
