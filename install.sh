@@ -14,7 +14,7 @@ ensure_shell_path() {
 mkdir -p "$CFG/hypr/themes" "$CFG/hypr/wallpapers" "$CFG/hypr/generated" "$HOME/.local/bin"
 cp "$REPO"/themes/*.json         "$CFG/hypr/themes/"
 cp "$REPO"/wallpapers/*.png      "$CFG/hypr/wallpapers/" 2>/dev/null || true
-for t in theme theme-new theme-menu wallgen starship-config; do
+for t in theme theme-new theme-menu wallgen starship-config theme-pywalfox; do
     install -m755 "$REPO/bin/$t" "$HOME/.local/bin/$t"
 done
 install -m644 "$REPO/bin/theme_starship.py" "$HOME/.local/bin/theme_starship.py"
