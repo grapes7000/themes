@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "bin" / "theme-stylus"
@@ -82,6 +83,36 @@ class StylusExportTests(unittest.TestCase):
             MODULE.atomic_write(destination, "second\n")
             self.assertEqual(destination.read_text(encoding="utf-8"), "second\n")
             self.assertEqual(list(destination.parent.glob("theme.user.css.*")), [])
+
+    def test_auto_browser_prefers_native_floorp(self) -> None:
+        installed = {
+            "floorp": "/usr/bin/floorp",
+            "flatpak": "/usr/bin/flatpak",
+            "firefox": "/usr/bin/firefox",
+            "xdg-open": "/usr/bin/xdg-open",
+        }
+        with patch.object(MODULE.shutil, "which", side_effect=installed.get):
+            commands = MODULE.browser_commands("auto")
+
+        self.assertEqual(commands[0], ("Floorp", ["/usr/bin/floorp"]))
+        self.assertEqual(
+            commands[1],
+            ("Floorp Flatpak", ["/usr/bin/flatpak", "run", MODULE.FLOORP_FLATPAK_ID]),
+        )
+        self.assertEqual(commands[2], ("Firefox", ["/usr/bin/firefox"]))
+
+    def test_floorp_browser_does_not_add_firefox_fallback(self) -> None:
+        installed = {
+            "flatpak": "/usr/bin/flatpak",
+            "firefox": "/usr/bin/firefox",
+        }
+        with patch.object(MODULE.shutil, "which", side_effect=installed.get):
+            commands = MODULE.browser_commands("floorp")
+
+        self.assertEqual(
+            commands,
+            [("Floorp Flatpak", ["/usr/bin/flatpak", "run", MODULE.FLOORP_FLATPAK_ID])],
+        )
 
 
 if __name__ == "__main__":
