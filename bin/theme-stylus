@@ -11,6 +11,7 @@ Usage:
     theme-stylus catppuccin_mocha
     theme-stylus nord --profile full
     theme-stylus catppuccin_mocha --open
+    theme-stylus catppuccin_mocha --open --browser floorp
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ XDG_CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config"))
 DEFAULT_THEME_DIR = XDG_CONFIG_HOME / "hypr" / "themes"
 DEFAULT_ACTIVE_FILE = XDG_CONFIG_HOME / "hypr" / "generated" / ".active"
 DEFAULT_OUTPUT_DIR = XDG_CONFIG_HOME / "theme-engine" / "stylus"
+FLOORP_FLATPAK_ID = "one.ablaze.floorp"
 HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
@@ -188,11 +190,45 @@ def atomic_write(path: Path, content: str) -> None:
             os.unlink(temporary)
 
 
-def open_in_browser(path: Path) -> bool:
-    opener = shutil.which("xdg-open")
-    if not opener:
-        return False
-    return subprocess.run([opener, path.as_uri()], check=False).returncode == 0
+def browser_commands(browser: str) -> list[tuple[str, list[str]]]:
+    """Return installed browser commands in preferred order.
+
+    ``auto`` deliberately prefers Floorp because that is the browser this
+    project's webpage theme is intended to be installed in. Both the native
+    executable and the official Flatpak application ID are supported.
+    """
+    commands: list[tuple[str, list[str]]] = []
+
+    def add_native(label: str, executable_name: str) -> None:
+        executable = shutil.which(executable_name)
+        if executable:
+            commands.append((label, [executable]))
+
+    def add_flatpak(label: str, app_id: str) -> None:
+        executable = shutil.which("flatpak")
+        if executable:
+            commands.append((label, [executable, "run", app_id]))
+
+    if browser in ("auto", "floorp"):
+        add_native("Floorp", "floorp")
+        add_flatpak("Floorp Flatpak", FLOORP_FLATPAK_ID)
+
+    if browser in ("auto", "firefox"):
+        add_native("Firefox", "firefox")
+
+    if browser in ("auto", "xdg"):
+        add_native("default browser", "xdg-open")
+
+    return commands
+
+
+def open_in_browser(path: Path, browser: str = "auto") -> str | None:
+    uri = path.as_uri()
+    for label, command in browser_commands(browser):
+        result = subprocess.run([*command, uri], check=False)
+        if result.returncode == 0:
+            return label
+    return None
 
 
 def parse_args() -> argparse.Namespace:
@@ -208,7 +244,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--active-file", type=Path, default=DEFAULT_ACTIVE_FILE)
     parser.add_argument("--output", type=Path, help="override generated .user.css path")
     parser.add_argument("--stdout", action="store_true", help="print UserCSS instead of writing")
-    parser.add_argument("--open", action="store_true", help="open generated UserCSS in the browser")
+    parser.add_argument("--open", action="store_true", help="open generated UserCSS in Floorp")
+    parser.add_argument(
+        "--browser",
+        choices=("auto", "floorp", "firefox", "xdg"),
+        default="auto",
+        help="browser used by --open; auto prefers Floorp",
+    )
     return parser.parse_args()
 
 
@@ -228,13 +270,14 @@ def main() -> int:
     print(f"stylus usercss -> {output} ({theme_name}, {args.profile})")
 
     if args.open:
-        if open_in_browser(output):
-            print("stylus -> opened installer page")
+        opened_in = open_in_browser(output, args.browser)
+        if opened_in:
+            print(f"stylus -> opened installer in {opened_in}")
         else:
-            print(f"stylus -> could not open automatically; open {output} in Firefox")
+            print(f"stylus -> could not open automatically; open {output} in Floorp")
             return 1
     else:
-        print("Install once in Stylus by opening the generated file in Firefox.")
+        print("Install once in Stylus by opening the generated file in Floorp.")
     return 0
 
 
