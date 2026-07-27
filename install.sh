@@ -5,12 +5,6 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
 
-ensure_shell_path() {
-    local file="$1" line='export PATH="$HOME/.local/bin:$PATH"'
-    touch "$file"
-    grep -Fqx "$line" "$file" || printf '\n%s\n' "$line" >> "$file"
-}
-
 mkdir -p "$CFG/hypr/themes" "$CFG/hypr/wallpapers" "$CFG/hypr/generated" "$HOME/.local/bin"
 cp "$REPO"/themes/*.json         "$CFG/hypr/themes/"
 cp "$REPO"/wallpapers/*.png      "$CFG/hypr/wallpapers/" 2>/dev/null || true
@@ -20,8 +14,6 @@ done
 install -m644 "$REPO/bin/theme_starship.py" "$HOME/.local/bin/theme_starship.py"
 install -m644 "$REPO/bin/theme_effects.py" "$HOME/.local/bin/theme_effects.py"
 install -m644 "$REPO/bin/theme_homepage.py" "$HOME/.local/bin/theme_homepage.py"
-ensure_shell_path "$HOME/.zshrc"
-ensure_shell_path "$HOME/.bashrc"
 
 has() { command -v "$1" >/dev/null 2>&1; }
 
@@ -201,7 +193,11 @@ if [ ! -f "$CFG/theme-engine/targets.conf" ]; then
 fi
 
 echo "Installed $(ls "$REPO"/themes/*.json | wc -l) themes + generators."
-echo "Added ~/.local/bin to zsh and bash startup files. Open a new shell, then run:"
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    echo "~/.local/bin is not currently on PATH. Add it through your shell config or Chezmoi-managed dotfiles:"
+    echo '  export PATH="$HOME/.local/bin:$PATH"'
+fi
+echo "The installer does not edit ~/.zshrc or ~/.bashrc. Open a shell where ~/.local/bin is on PATH, then run:"
 echo "  Apply desktop theme:  theme <name>"
 echo "  Update Firefox:       theme-pywalfox <name>"
 echo "  Generate webpage CSS: theme-stylus <name> --open"
