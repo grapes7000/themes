@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""Export any theme-engine theme as a pywalfox-compatible colors.json.
+
+Pywalfox reads $XDG_CACHE_HOME/wal/colors.json and requires both a
+16-color `colors` object and a `wallpaper` key. This command creates that
+cache from the theme engine's semantic roles without applying any
+color-family preference.
+
+Pywalfox's built-in templates consume particular pywal indexes as browser
+UI roles rather than treating all 16 entries as a terminal palette. The
+exporter therefore preserves the ANSI palette as a base, then places the
+semantic theme accents/background/text into the indexes Pywalfox actually
+uses for dark or light browser themes.
+
+Usage:
+    theme-pywalfox                  # export the active theme
+    theme-pywalfox catppuccin_mocha
+    theme-pywalfox y2k --no-update
+    theme-pywalfox nord --wallpaper ~/Pictures/nord.png
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Any
+
+HOME = Path.home()
+XDG_CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config"))
+XDG_CACHE_HOME = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache"))
+DEFAULT_THEME_DIR = XDG_CONFIG_HOME / "hypr" / "themes"
+DEFAULT_ACTIVE_FILE = XDG_CONFIG_HOME / "hypr" / "generated" / ".active"
+DEFAULT_OUTPUT = XDG_CACHE_HOME / "wal" / "colors.json"
+HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+ANSI_KEYS = (
+    "ansi_black",
+    "ansi_red",
+    "ansi_green",
+    "ansi_yellow",
+    "ansi_blue",
+    "ansi_magenta",
+    "ansi_cyan",
+    "ansi_white",
+    "ansi_br_black",
+    "ansi_br_red",
+    "ansi_br_green",
+    "ansi_br_yellow",
+    "ansi_br_blue",
+    "ansi_br_magenta",
+    "ansi_br_cyan",
+    "ansi_br_white",
+)
+
+
+def _color(value: Any, fallback: str) -> str:
+    """Return a valid #RRGGBB value, falling back safely when needed."""
+    if isinstance(value, str) and HEX_COLOR.fullmatch(value):
+        return value.lower()
+    return fallback.lower()
+
+
+def _role(roles: dict[str, Any], key: str, fallback_key: str) -> str:
+    fallback = roles.get(fallback_key, "#000000")
+    fallback = fallback if isinstance(fallback, str) else "#000000"
+    return _color(roles.get(key), _color(fallback, "#000000"))
+
+
+def ansi_palette(roles: dict[str, Any]) -> list[str]:
+    """Build 16 ANSI colors, deriving sensible values for incomplete themes."""
+    fallback_keys = {
+        "ansi_black": "bg",
+        "ansi_red": "urgent",
+        "ansi_green": "accent2",
+        "ansi_yellow": "accent",
+        "ansi_blue": "accent2",
+        "ansi_magenta": "accent",
+        "ansi_cyan": "accent2",
+        "ansi_white": "text_dim",
+        "ansi_br_black": "bg_alt",
+        "ansi_br_red": "urgent",
+        "ansi_br_green": "accent2",
+        "ansi_br_yellow": "accent",
+        "ansi_br_blue": "accent2",
+        "ansi_br_magenta": "accent",
+        "ansi_br_cyan": "accent2",
+        "ansi_br_white": "text",
+    }
+    return [_role(roles, key, fallback_keys[key]) for key in ANSI_KEYS]
+
+
+def pywalfox_palette(roles: dict[str, Any], dark: bool) -> list[str]:
+    """Return a 16-color palette optimized for Pywalfox's default templates.
+
+    Pywalfox dark mode maps color0/background, color15/text, color10/primary
+    accent and color13/secondary accent. Light mode maps color7/background,
+    color0/text, color3/primary accent and color5/secondary accent.
+
+    All unconsumed slots retain their original ANSI values so ordinary pywal
+    consumers still receive a complete and recognizable palette.
+    """
+    colors = ansi_palette(roles)
+    background = _role(roles, "bg", "ansi_black")
+    text = _role(roles, "text", "ansi_br_white")
+    accent = _role(roles, "accent", "ansi_magenta")
+    accent2 = _role(roles, "accent2", "ansi_blue")
+
+    if dark:
+        colors[0] = background
+        colors[10] = accent
+        colors[13] = accent2
+        colors[15] = text
+    else:
+        colors[0] = text
+        colors[3] = accent
+        colors[5] = accent2
+        colors[7] = background
+
+    return colors
+
+
+def resolve_wallpaper(theme_name: str, explicit: str | None = None) -> Path:
+    """Resolve the same wallpaper preference order used by the theme engine."""
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+
+    candidates = (
+        XDG_CONFIG_HOME / "hypr" / "wallpapers" / f"{theme_name}.png",
+        XDG_CONFIG_HOME / theme_name / "wallpaper.png",
+        XDG_CONFIG_HOME / "hypr" / "wallpaper.png",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+
+    # Pywalfox requires the key even if the user has not generated a wallpaper
+    # yet. Preserve the engine's normal fallback path so a later wallgen run
+    # immediately makes the cache fully resolvable.
+    return candidates[-1].resolve()
+
+
+def load_theme(theme_name: str, theme_dir: Path) -> dict[str, Any]:
+    path = theme_dir / f"{theme_name}.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise SystemExit(f"theme-pywalfox: unknown theme '{theme_name}' ({path})") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"theme-pywalfox: invalid JSON in {path}: {exc}") from exc
+
+    roles = data.get("roles")
+    if not isinstance(roles, dict):
+        raise SystemExit(f"theme-pywalfox: {path} does not contain a roles object")
+    return data
+
+
+def active_theme(active_file: Path) -> str:
+    try:
+        name = active_file.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise SystemExit(
+            "theme-pywalfox: no theme supplied and no active theme was found"
+        ) from exc
+    if not name:
+        raise SystemExit("theme-pywalfox: active theme file is empty")
+    return name
+
+
+def build_payload(theme_name: str, data: dict[str, Any], wallpaper: Path) -> dict[str, Any]:
+    roles = data["roles"]
+    dark = bool(data.get("dark", True))
+    colors = pywalfox_palette(roles, dark)
+    background = _role(roles, "bg", "ansi_black")
+    foreground = _role(roles, "text", "ansi_br_white")
+    cursor = _role(roles, "cursor", "accent")
+
+    return {
+        "wallpaper": str(wallpaper),
+        "alpha": "100",
+        "special": {
+            "background": background,
+            "foreground": foreground,
+            "cursor": cursor,
+        },
+        "colors": {f"color{i}": color for i, color in enumerate(colors)},
+        "theme_engine": {
+            "name": theme_name,
+            "dark": dark,
+            "source": "theme-engine",
+            "mapping": "pywalfox-semantic-v1",
+        },
+    }
+
+
+def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix="colors.", suffix=".json", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def update_pywalfox() -> bool:
+    executable = shutil.which("pywalfox")
+    if not executable:
+        return False
+    result = subprocess.run([executable, "update"], check=False)
+    return result.returncode == 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Export a theme-engine theme for pywal and pywalfox"
+    )
+    parser.add_argument("theme", nargs="?", help="theme name; defaults to the active theme")
+    parser.add_argument("--theme-dir", type=Path, default=DEFAULT_THEME_DIR)
+    parser.add_argument("--active-file", type=Path, default=DEFAULT_ACTIVE_FILE)
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--wallpaper", help="override the wallpaper path in colors.json")
+    parser.add_argument("--no-update", action="store_true", help="do not run `pywalfox update`")
+    parser.add_argument("--print", dest="print_payload", action="store_true", help="print generated JSON")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    theme_dir = args.theme_dir.expanduser()
+    active_file = args.active_file.expanduser()
+    output = args.output.expanduser()
+    theme_name = args.theme or active_theme(active_file)
+    data = load_theme(theme_name, theme_dir)
+    wallpaper = resolve_wallpaper(theme_name, args.wallpaper)
+    payload = build_payload(theme_name, data, wallpaper)
+    atomic_write_json(output, payload)
+
+    if args.print_payload:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(f"pywal cache -> {output} ({theme_name})")
+
+    if not args.no_update:
+        if update_pywalfox():
+            print("pywalfox -> updated")
+        elif shutil.which("pywalfox"):
+            print("pywalfox -> update failed", file=os.sys.stderr)
+            return 1
+        else:
+            print("pywalfox -> not installed; cache is ready")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
