@@ -31,8 +31,10 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install -r requirements-dev.txt
 
-      - name: Verify exporter is executable
-        run: test -x bin/theme-pywalfox
+      - name: Verify command executables
+        run: |
+          test -x bin/theme-pywalfox
+          test -x bin/theme-from-image
 
       - name: Run test suite
         run: pytest -q
