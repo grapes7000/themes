@@ -154,20 +154,20 @@ def render_yuck(settings: dict, theme_name: str = "", effects_preset: str | None
   (box :class "card" :orientation "v" :space-evenly false
     (box :orientation "h" :space-evenly true
       (label :class "sysinfo-label" :text "CPU")
-      (label :class "sysinfo-value" :text "{{jq(sysinfo, '.cpu')}}%")
+      (label :class "sysinfo-value" :text "${{sysinfo.cpu}}%")
       (label :class "sysinfo-label" :text "MEM")
-      (label :class "sysinfo-value" :text "{{jq(sysinfo, '.mem')}}"))
+      (label :class "sysinfo-value" :text "${{sysinfo.mem}}"))
     (box :orientation "h" :space-evenly true
       (label :class "sysinfo-label" :text "DISK")
-      (label :class "sysinfo-value" :text "{{jq(sysinfo, '.disk')}}%")
+      (label :class "sysinfo-value" :text "${{sysinfo.disk}}%")
       (label :class "sysinfo-label" :text "UP")
-      (label :class "sysinfo-value" :text "{{jq(sysinfo, '.uptime')}}"))))
+      (label :class "sysinfo-value" :text "${{sysinfo.uptime}}"))))
 
 (defwidget media-widget []
   (box :visible {{jq(media, '.visible')}} :class "card" :orientation "v" :space-evenly false
-    (label :class "media-status" :halign "start" :text "{{jq(media, '.status')}}")
-    (label :class "media-title" :halign "start" :limit-width 35 :text "{{jq(media, '.title')}}")
-    (label :class "media-artist" :halign "start" :limit-width 35 :text "{{jq(media, '.artist')}}")))
+    (label :class "media-status" :halign "start" :text "${{media.status}}")
+    (label :class "media-title" :halign "start" :limit-width 35 :text "${{media.title}}")
+    (label :class "media-artist" :halign "start" :limit-width 35 :text "${{media.artist}}")))
 
 (defwidget homepage []
   (box :class "homepage-root" :orientation "v" :space-evenly false :valign "start"
