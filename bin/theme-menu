@@ -1,4 +1,4 @@
 #!/bin/sh
 # Pick a theme via wofi and apply it.
-sel="$(~/.local/bin/theme --list | wofi --dmenu --prompt 'theme')"
+sel="$(~/.local/bin/theme --list | ~/.local/bin/wofi-singleton --dmenu --prompt 'theme')"
 [ -n "$sel" ] && ~/.local/bin/theme "$sel"
