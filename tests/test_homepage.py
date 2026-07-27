@@ -89,10 +89,14 @@ def test_overlay_is_fullscreen_with_fixed_widget_column(monkeypatch):
     monkeypatch.setattr(theme_homepage, "_monitor_size", lambda: (1920, 1080))
     yuck = theme_homepage.render_yuck({"alignment": "right"})
     assert 'anchor "top right"' in yuck
-    assert ':width "100%"' in yuck
-    assert ':height "100%"' in yuck
+    assert ':width "1920px"' in yuck
+    assert ':height "1080px"' in yuck
     assert ':halign "end"' in yuck
     assert ':width 430' in yuck
+    assert ':stacking "bottom"' in yuck
+    assert ':exclusive false' in yuck
+    assert ':focusable false' in yuck
+    assert 'homepage-tint" :hexpand true :vexpand true' in yuck
 
 
 def test_generated_labels_are_escaped():
@@ -111,7 +115,10 @@ def test_wallpaper_priority_and_background_widget(tmp_path, monkeypatch):
     assert str(generated) in yuck
     assert 'image-width 2560' in yuck
     assert 'image-height 1440' in yuck
+    assert 'homepage-background" :path' in yuck
+    assert ':hexpand true :vexpand true' in yuck
     assert 'homepage-background-fallback' not in yuck
+    assert 'preserve-aspect-ratio' not in yuck
 
 
 def test_missing_wallpaper_uses_colored_fallback(tmp_path, monkeypatch):
@@ -221,6 +228,7 @@ def test_helpers_run_with_missing_optional_dependencies(tmp_path):
 
 def test_missing_pid_is_not_running(tmp_path, monkeypatch):
     monkeypatch.setattr(theme_homepage, "PIDFILE", tmp_path / "missing.pid")
+    monkeypatch.setattr(theme_homepage, "_ping_daemon", lambda env=None: False)
     assert theme_homepage.is_running() is False
 
 
@@ -229,6 +237,7 @@ def test_unrelated_pid_is_never_treated_as_homepage(tmp_path, monkeypatch):
     pidfile.write_text(str(os.getpid()))
     monkeypatch.setattr(theme_homepage, "PIDFILE", pidfile)
     monkeypatch.setattr(theme_homepage, "_matches_homepage", lambda pid: False)
+    monkeypatch.setattr(theme_homepage, "_ping_daemon", lambda env=None: False)
     assert theme_homepage.is_running() is False
     assert not pidfile.exists()
 
@@ -243,6 +252,65 @@ def test_stop_does_not_kill_unverified_process(tmp_path, monkeypatch):
     message = theme_homepage.stop()
     assert "no process was terminated" in message
     assert called == []
+
+
+def test_defpoll_vars_have_json_initial_values():
+    yuck = theme_homepage.render_yuck({"alignment": "left"})
+    assert ':initial "{\\"cpu\\":0' in yuck
+    assert ':initial "{\\"visible\\":false' in yuck
+    assert ':initial "{\\"active\\":1' in yuck
+
+
+def test_clean_stale_socket_removes_orphan(tmp_path, monkeypatch):
+    import socket as _socket
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    sock_path = runtime / "eww-server_deadbeef"
+    server = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    server.bind(str(sock_path))
+    server.close()
+    assert sock_path.exists()
+    monkeypatch.setattr(theme_homepage, "RUNTIME_DIR", runtime)
+    monkeypatch.setattr(theme_homepage, "_ping_daemon", lambda env=None: False)
+    theme_homepage._clean_stale_socket()
+    assert not sock_path.exists()
+
+
+def test_clean_stale_socket_preserves_live_daemon(tmp_path, monkeypatch):
+    import socket as _socket
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    sock_path = runtime / "eww-server_deadbeef"
+    server = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    server.bind(str(sock_path))
+    server.close()
+    monkeypatch.setattr(theme_homepage, "RUNTIME_DIR", runtime)
+    monkeypatch.setattr(theme_homepage, "_ping_daemon", lambda env=None: True)
+    theme_homepage._clean_stale_socket()
+    assert sock_path.exists()
+
+
+def test_start_reports_daemon_stderr_when_launch_fails(monkeypatch):
+    monkeypatch.setattr(theme_homepage, "is_running", lambda: False)
+    monkeypatch.setattr(theme_homepage, "dependency_report",
+                        lambda: {"eww": True, "python3": True, "hyprctl": True, "playerctl": True})
+    monkeypatch.setattr(theme_homepage.Path, "is_file", lambda self: True)
+    monkeypatch.setattr(theme_homepage, "_clean_pidfile", lambda: None)
+    monkeypatch.setattr(theme_homepage, "_clean_stale_socket", lambda: None)
+    monkeypatch.setattr(theme_homepage, "_ping_daemon", lambda env=None: False)
+    monkeypatch.setattr(theme_homepage, "_wait_for_daemon", lambda env, timeout=3.0: False)
+
+    class FakePopen:
+        def __init__(self, *args, **kwargs):
+            self.pid = 9999
+        def poll(self):
+            return 1
+        def communicate(self, timeout=None):
+            return b"", b"daemon boom"
+
+    monkeypatch.setattr(theme_homepage.subprocess, "Popen", FakePopen)
+    message = theme_homepage.start()
+    assert "daemon boom" in message
 
 
 def test_start_requires_eww_and_python(monkeypatch):
