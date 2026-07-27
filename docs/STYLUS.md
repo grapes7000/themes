@@ -3,7 +3,7 @@
 `theme-stylus` converts any installed theme-engine theme into a Stylus-compatible
 UserCSS file for normal web pages. It complements Pywalfox:
 
-- Pywalfox themes Firefox and Thunderbird chrome.
+- Pywalfox themes browser chrome.
 - Stylus injects CSS into web content.
 
 The exporter never edits a source theme and does not touch the Stylus extension
@@ -11,7 +11,7 @@ database directly.
 
 ## Install Stylus
 
-Install the official Stylus extension in Firefox. Stylus is the userstyle manager
+Install the official Stylus extension in Floorp. Stylus is the userstyle manager
 from `openstyles/stylus`, not the similarly named CSS preprocessor.
 
 ## Generate and install the safe profile
@@ -26,7 +26,15 @@ The command writes:
 $XDG_CONFIG_HOME/theme-engine/stylus/theme-engine-soft.user.css
 ```
 
-Firefox opens the generated file. Confirm the installation in Stylus.
+`--open` prefers Floorp automatically. It supports both a native `floorp`
+executable and the Floorp Flatpak application ID. Confirm the installation in
+Stylus after the generated file opens.
+
+To require Floorp instead of allowing the automatic fallback chain:
+
+```bash
+theme-stylus catppuccin_mocha --open --browser floorp
+```
 
 The soft profile intentionally changes only:
 
@@ -58,6 +66,26 @@ theme catppuccin_mocha
 theme-stylus --open
 ```
 
+## Browser selection
+
+```bash
+# Floorp only: native executable, then Floorp Flatpak
+theme-stylus nord --open --browser floorp
+
+# Firefox only
+theme-stylus nord --open --browser firefox
+
+# Use the desktop's registered default browser
+theme-stylus nord --open --browser xdg
+```
+
+The default `--browser auto` order is:
+
+1. native Floorp
+2. Floorp Flatpak
+3. Firefox
+4. the browser registered with `xdg-open`
+
 ## Regenerate after a theme change
 
 ```bash
@@ -88,7 +116,7 @@ theme-stylus nord --profile full
 The generated style:
 
 - applies only to `http://` and `https://` pages
-- does not style Firefox internal pages or extension pages
+- does not style browser internal pages or extension pages
 - does not alter geometry, spacing, positioning, images, video, or SVG
 - keeps the full profile optional
 - uses prefixed CSS variables to reduce collisions with site variables
