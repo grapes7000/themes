@@ -40,6 +40,7 @@ class PywalfoxExportTests(unittest.TestCase):
         self.assertEqual(payload["special"]["foreground"], "#f0f0f0")
         self.assertEqual(list(payload["colors"]), [f"color{i}" for i in range(16)])
         self.assertEqual(len(payload["colors"]), 16)
+        self.assertEqual(payload["theme_engine"]["mapping"], "pywalfox-semantic-v1")
 
     def test_incomplete_theme_receives_deterministic_ansi_fallbacks(self) -> None:
         roles = {
@@ -59,7 +60,7 @@ class PywalfoxExportTests(unittest.TestCase):
         self.assertEqual(palette[8], "#222222")
         self.assertEqual(palette[15], "#eeeeee")
 
-    def test_explicit_ansi_roles_are_preserved(self) -> None:
+    def test_explicit_ansi_roles_are_preserved_in_base_palette(self) -> None:
         roles = {
             "bg": "#000000",
             "bg_alt": "#111111",
@@ -72,6 +73,44 @@ class PywalfoxExportTests(unittest.TestCase):
         }
         palette = MODULE.ansi_palette(roles)
         self.assertEqual(palette, [f"#{index:06x}" for index in range(16)])
+
+    def test_dark_pywalfox_slots_use_semantic_theme_roles(self) -> None:
+        roles = {
+            "bg": "#1e1e2e",
+            "bg_alt": "#181825",
+            "text": "#cdd6f4",
+            "text_dim": "#a6adc8",
+            "accent": "#cba6f7",
+            "accent2": "#89b4fa",
+            "urgent": "#f38ba8",
+            **{key: f"#{index:06x}" for index, key in enumerate(MODULE.ANSI_KEYS)},
+        }
+        palette = MODULE.pywalfox_palette(roles, dark=True)
+
+        self.assertEqual(palette[0], "#1e1e2e")
+        self.assertEqual(palette[10], "#cba6f7")
+        self.assertEqual(palette[13], "#89b4fa")
+        self.assertEqual(palette[15], "#cdd6f4")
+        self.assertEqual(palette[1], "#000001")
+
+    def test_light_pywalfox_slots_use_semantic_theme_roles(self) -> None:
+        roles = {
+            "bg": "#eff1f5",
+            "bg_alt": "#e6e9ef",
+            "text": "#4c4f69",
+            "text_dim": "#6c6f85",
+            "accent": "#8839ef",
+            "accent2": "#1e66f5",
+            "urgent": "#d20f39",
+            **{key: f"#{index:06x}" for index, key in enumerate(MODULE.ANSI_KEYS)},
+        }
+        palette = MODULE.pywalfox_palette(roles, dark=False)
+
+        self.assertEqual(palette[0], "#4c4f69")
+        self.assertEqual(palette[3], "#8839ef")
+        self.assertEqual(palette[5], "#1e66f5")
+        self.assertEqual(palette[7], "#eff1f5")
+        self.assertEqual(palette[1], "#000001")
 
     def test_atomic_writer_produces_valid_json(self) -> None:
         payload = {
