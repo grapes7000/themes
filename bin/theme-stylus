@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""Generate a Stylus-compatible UserCSS file from a theme-engine theme.
+
+The default ``soft`` profile changes browser-native page accents, selections,
+focus rings, form carets, and scrollbars without replacing site layouts or
+surfaces. The optional ``full`` profile also recolors common page surfaces,
+text, links, forms, and code blocks.
+
+Usage:
+    theme-stylus                         # active theme, soft profile
+    theme-stylus catppuccin_mocha
+    theme-stylus nord --profile full
+    theme-stylus catppuccin_mocha --open
+    theme-stylus catppuccin_mocha --open --browser floorp
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Any
+
+HOME = Path.home()
+XDG_CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config"))
+DEFAULT_THEME_DIR = XDG_CONFIG_HOME / "hypr" / "themes"
+DEFAULT_ACTIVE_FILE = XDG_CONFIG_HOME / "hypr" / "generated" / ".active"
+DEFAULT_OUTPUT_DIR = XDG_CONFIG_HOME / "theme-engine" / "stylus"
+FLOORP_FLATPAK_ID = "one.ablaze.floorp"
+HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _color(value: Any, fallback: str) -> str:
+    if isinstance(value, str) and HEX_COLOR.fullmatch(value):
+        return value.lower()
+    return fallback.lower()
+
+
+def _role(roles: dict[str, Any], key: str, fallback_key: str) -> str:
+    fallback = roles.get(fallback_key, "#000000")
+    fallback = fallback if isinstance(fallback, str) else "#000000"
+    return _color(roles.get(key), _color(fallback, "#000000"))
+
+
+def load_theme(theme_name: str, theme_dir: Path) -> dict[str, Any]:
+    path = theme_dir / f"{theme_name}.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise SystemExit(f"theme-stylus: unknown theme '{theme_name}' ({path})") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"theme-stylus: invalid JSON in {path}: {exc}") from exc
+
+    roles = data.get("roles")
+    if not isinstance(roles, dict):
+        raise SystemExit(f"theme-stylus: {path} does not contain a roles object")
+    return data
+
+
+def active_theme(active_file: Path) -> str:
+    try:
+        name = active_file.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise SystemExit(
+            "theme-stylus: no theme supplied and no active theme was found"
+        ) from exc
+    if not name:
+        raise SystemExit("theme-stylus: active theme file is empty")
+    return name
+
+
+def render_usercss(theme_name: str, data: dict[str, Any], profile: str) -> str:
+    roles = data["roles"]
+    dark = bool(data.get("dark", True))
+    scheme = "dark" if dark else "light"
+
+    colors = {
+        "bg": _role(roles, "bg", "ansi_black"),
+        "bg_alt": _role(roles, "bg_alt", "bg"),
+        "text": _role(roles, "text", "ansi_br_white"),
+        "text_dim": _role(roles, "text_dim", "text"),
+        "accent": _role(roles, "accent", "focus"),
+        "accent2": _role(roles, "accent2", "accent"),
+        "border": _role(roles, "border_normal", "bg_alt"),
+        "selection_bg": _role(roles, "sel_bg", "accent"),
+        "selection_fg": _role(roles, "sel_fg", "bg"),
+        "urgent": _role(roles, "urgent", "accent"),
+    }
+
+    header = f"""/* ==UserStyle==
+@name           Theme Engine — {theme_name} ({profile})
+@namespace      github.com/grapes7000/themes
+@version        1.0.0
+@description    Generated from the {theme_name} semantic theme palette.
+@author         Theme Engine
+==/UserStyle== */
+
+/* Generated file. Re-run theme-stylus instead of editing this copy. */
+@-moz-document regexp("^https?://.*") {{
+  :root {{
+    --theme-engine-bg: {colors['bg']};
+    --theme-engine-bg-alt: {colors['bg_alt']};
+    --theme-engine-text: {colors['text']};
+    --theme-engine-text-dim: {colors['text_dim']};
+    --theme-engine-accent: {colors['accent']};
+    --theme-engine-accent-2: {colors['accent2']};
+    --theme-engine-border: {colors['border']};
+    --theme-engine-selection-bg: {colors['selection_bg']};
+    --theme-engine-selection-fg: {colors['selection_fg']};
+    --theme-engine-urgent: {colors['urgent']};
+    color-scheme: {scheme} !important;
+    accent-color: var(--theme-engine-accent) !important;
+    scrollbar-color: var(--theme-engine-accent) var(--theme-engine-bg-alt) !important;
+  }}
+
+  ::selection {{
+    background-color: var(--theme-engine-selection-bg) !important;
+    color: var(--theme-engine-selection-fg) !important;
+  }}
+
+  :where(input, textarea, select) {{
+    caret-color: var(--theme-engine-accent) !important;
+  }}
+
+  :where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {{
+    outline: 2px solid var(--theme-engine-accent) !important;
+    outline-offset: 2px !important;
+  }}
+"""
+
+    if profile == "full":
+        header += """
+  /* Full profile: deliberately avoids layout, sizing, images, video, and SVG. */
+  :where(html, body) {
+    background-color: var(--theme-engine-bg) !important;
+    color: var(--theme-engine-text) !important;
+  }
+
+  :where(main, article, section, nav, header, footer, aside, dialog,
+         [role="dialog"], [role="menu"], [role="listbox"], [role="tooltip"]) {
+    background-color: var(--theme-engine-bg) !important;
+    color: var(--theme-engine-text) !important;
+    border-color: var(--theme-engine-border) !important;
+  }
+
+  :where(a, a:visited) {
+    color: var(--theme-engine-accent-2) !important;
+  }
+
+  :where(button, input, textarea, select, option) {
+    background-color: var(--theme-engine-bg-alt) !important;
+    color: var(--theme-engine-text) !important;
+    border-color: var(--theme-engine-border) !important;
+  }
+
+  :where(pre, code, kbd, samp, blockquote) {
+    background-color: var(--theme-engine-bg-alt) !important;
+    color: var(--theme-engine-text) !important;
+    border-color: var(--theme-engine-border) !important;
+  }
+
+  :where(hr) {
+    border-color: var(--theme-engine-border) !important;
+  }
+
+  :where(small, time, figcaption, [aria-disabled="true"]) {
+    color: var(--theme-engine-text-dim) !important;
+  }
+"""
+
+    return header + "}\n"
+
+
+def atomic_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def browser_commands(browser: str) -> list[tuple[str, list[str]]]:
+    """Return installed browser commands in preferred order.
+
+    ``auto`` deliberately prefers Floorp because that is the browser this
+    project's webpage theme is intended to be installed in. Both the native
+    executable and the official Flatpak application ID are supported.
+    """
+    commands: list[tuple[str, list[str]]] = []
+
+    def add_native(label: str, executable_name: str) -> None:
+        executable = shutil.which(executable_name)
+        if executable:
+            commands.append((label, [executable]))
+
+    def add_flatpak(label: str, app_id: str) -> None:
+        executable = shutil.which("flatpak")
+        if executable:
+            commands.append((label, [executable, "run", app_id]))
+
+    if browser in ("auto", "floorp"):
+        add_native("Floorp", "floorp")
+        add_flatpak("Floorp Flatpak", FLOORP_FLATPAK_ID)
+
+    if browser in ("auto", "firefox"):
+        add_native("Firefox", "firefox")
+
+    if browser in ("auto", "xdg"):
+        add_native("default browser", "xdg-open")
+
+    return commands
+
+
+def open_in_browser(path: Path, browser: str = "auto") -> str | None:
+    uri = path.as_uri()
+    for label, command in browser_commands(browser):
+        result = subprocess.run([*command, uri], check=False)
+        if result.returncode == 0:
+            return label
+    return None
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate Stylus UserCSS from a theme")
+    parser.add_argument("theme", nargs="?", help="theme name; defaults to active theme")
+    parser.add_argument(
+        "--profile",
+        choices=("soft", "full"),
+        default="soft",
+        help="soft is safer; full recolors common page surfaces",
+    )
+    parser.add_argument("--theme-dir", type=Path, default=DEFAULT_THEME_DIR)
+    parser.add_argument("--active-file", type=Path, default=DEFAULT_ACTIVE_FILE)
+    parser.add_argument("--output", type=Path, help="override generated .user.css path")
+    parser.add_argument("--stdout", action="store_true", help="print UserCSS instead of writing")
+    parser.add_argument("--open", action="store_true", help="open generated UserCSS in Floorp")
+    parser.add_argument(
+        "--browser",
+        choices=("auto", "floorp", "firefox", "xdg"),
+        default="auto",
+        help="browser used by --open; auto prefers Floorp",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    theme_name = args.theme or active_theme(args.active_file.expanduser())
+    data = load_theme(theme_name, args.theme_dir.expanduser())
+    css = render_usercss(theme_name, data, args.profile)
+
+    if args.stdout:
+        print(css, end="")
+        return 0
+
+    output = args.output or DEFAULT_OUTPUT_DIR / f"theme-engine-{args.profile}.user.css"
+    output = output.expanduser().resolve()
+    atomic_write(output, css)
+    print(f"stylus usercss -> {output} ({theme_name}, {args.profile})")
+
+    if args.open:
+        opened_in = open_in_browser(output, args.browser)
+        if opened_in:
+            print(f"stylus -> opened installer in {opened_in}")
+        else:
+            print(f"stylus -> could not open automatically; open {output} in Floorp")
+            return 1
+    else:
+        print("Install once in Stylus by opening the generated file in Floorp.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
