@@ -8,6 +8,11 @@
     theme effects <name>  # switch effects preset (minimal/calm/polished/cyber)
     theme effects --list  # list available presets
     theme effects none    # clear preset, use theme defaults
+    theme homepage        # show homepage status
+    theme homepage on     # enable + start the desktop homepage overlay
+    theme homepage off    # disable + stop the overlay
+    theme homepage restart
+    theme homepage left|right  # set alignment
 
 Single source of truth: ~/.config/hypr/themes/<name>.json
 Everything under */generated/ is written by this script — never edit it by hand.
@@ -15,6 +20,7 @@ Everything under */generated/ is written by this script — never edit it by han
 import json, os, sys, glob, subprocess, signal, shutil, time, re
 from theme_starship import render as render_starship
 import theme_effects
+import theme_homepage
 
 HOME = os.path.expanduser("~")
 CFG = os.path.join(HOME, ".config")
@@ -589,6 +595,20 @@ label {{
     write(os.path.join(CFG, "hypr", "hyprlock.conf"), cfg)
 
 
+def gen_homepage(r, s, name, effects_preset=None):
+    eww_dir = os.path.join(CFG, "eww", "homepage")
+    scss = theme_homepage.render_scss(r, s, effects_preset)
+    write(os.path.join(eww_dir, "eww.scss"), scss)
+    hp = theme_homepage.profile()
+    yuck = theme_homepage.render_yuck(hp, theme_name=name, effects_preset=effects_preset)
+    write(os.path.join(eww_dir, "eww.yuck"), yuck)
+    scripts_dir = os.path.join(eww_dir, "scripts")
+    for fname, content in theme_homepage.render_scripts().items():
+        spath = os.path.join(scripts_dir, fname)
+        write(spath, content)
+        os.chmod(spath, 0o755)
+
+
 def gen_obsidian(r, dark, vault):
     """CSS snippet in the vault mapping palette -> Obsidian CSS vars, and enable
     it in appearance.json. Obsidian hot-reloads snippet edits."""
@@ -940,6 +960,9 @@ def reload():
     for sock in socks:
         run("nvim", "--server", sock, "--remote-send",
             f"<C-\\><C-N>:luafile {theme_lua}<CR>")
+    # homepage overlay: hot-reload colors if running
+    if theme_homepage.is_running():
+        run("eww", "reload", "--config", theme_homepage.EWW_DIR)
     # --- host desktop-environment apply (only if those targets are enabled) ---
     tg = load_targets()
     if "kde" in tg:
@@ -1033,6 +1056,7 @@ def apply(name):
     if "rofi" in tg:      gen_rofi(r, s)
     if "dunst" in tg:     gen_dunst(r, s)
     if "hyprlock" in tg:  gen_hyprlock(r, s)
+    if "homepage" in tg:  gen_homepage(r, s, name, effects_preset)
     if "obsidian" in tg:  gen_obsidian(r, dark, tg["obsidian"])
     if "firefox" in tg:   gen_firefox(r, dark)
     if "kde" in tg:       gen_kde(r, s, dark)
@@ -1093,6 +1117,57 @@ def effects_cmd(args):
         apply(cur)
 
 
+def homepage_cmd(args):
+    """`theme homepage [on|off|restart|left|right]` — desktop homepage overlay."""
+    if not args:
+        hp = theme_homepage.profile()
+        running = theme_homepage.is_running()
+        if running:
+            print(f"on ({hp['alignment']}-aligned)")
+        else:
+            print("off")
+        return
+    cmd = args[0]
+    if cmd == "on":
+        hp = theme_homepage.profile()
+        hp["enabled"] = True
+        theme_homepage.save(hp)
+        cur = active()
+        if cur:
+            apply(cur)
+        msg = theme_homepage.start()
+        print(f"homepage -> {msg}")
+        return
+    if cmd == "off":
+        hp = theme_homepage.profile()
+        hp["enabled"] = False
+        theme_homepage.save(hp)
+        msg = theme_homepage.stop()
+        print(f"homepage -> {msg}")
+        return
+    if cmd == "restart":
+        theme_homepage.stop()
+        cur = active()
+        if cur:
+            apply(cur)
+        msg = theme_homepage.start()
+        print(f"homepage -> {msg}")
+        return
+    if cmd in theme_homepage.VALID_ALIGNMENTS:
+        hp = theme_homepage.profile()
+        hp["alignment"] = cmd
+        theme_homepage.save(hp)
+        print(f"homepage alignment -> {cmd}")
+        cur = active()
+        if cur:
+            apply(cur)
+        if theme_homepage.is_running():
+            theme_homepage.stop()
+            theme_homepage.start()
+        return
+    sys.exit(f"theme homepage: unknown command '{cmd}'. Try: on, off, restart, left, right")
+
+
 def main():
     args = sys.argv[1:]
     if args and args[0] == "starship":
@@ -1107,6 +1182,8 @@ def main():
         return
     if args and args[0] == "effects":
         effects_cmd(args[1:]); return
+    if args and args[0] == "homepage":
+        homepage_cmd(args[1:]); return
     if args and args[0] == "font":
         font_cmd(args[1:]); return
     if args and args[0] in ("-l", "--list"):

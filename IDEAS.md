@@ -1,16 +1,24 @@
-# Deferred Ideas (Phase 2+)
+# Deferred Ideas (Phase 2B+)
 
-Ideas discovered during Phase 1 implementation. None of these are started.
+Ideas discovered during Phase 1 and Phase 2A implementation. None of these are started.
+
+## Homepage Extensions (Phase 2B)
+
+- Homepage TUI configurator (like starship-config)
+- Multi-monitor support (per-monitor homepage instances)
+- Widget ordering customization
+- Per-widget enable/disable toggles
+- Additional widgets: weather, calendar, quick-launch, Git status
+- Card blur via Hyprland layerrule integration
+- Animated widget transitions on theme switch
 
 ## Desktop Environment
 
-- Desktop homepage / dashboard with system info, calendar, weather
 - Special workspace as a dashboard surface
 - Theme-switch animation sequence (cross-fade between themes)
 
 ## Widget Frameworks
 
-- Eww, AGS, or Quickshell widget integration
 - Notification center widget
 - Control center (volume, brightness, network, bluetooth)
 - Logout menu / session manager
