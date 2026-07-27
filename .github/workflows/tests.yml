@@ -34,6 +34,7 @@ jobs:
       - name: Verify command executables
         run: |
           test -x bin/theme-pywalfox
+          test -x bin/theme-stylus
           test -x bin/theme-from-image
 
       - name: Run test suite
