@@ -18,6 +18,8 @@ for t in theme theme-new theme-menu wallgen starship-config; do
     install -m755 "$REPO/bin/$t" "$HOME/.local/bin/$t"
 done
 install -m644 "$REPO/bin/theme_starship.py" "$HOME/.local/bin/theme_starship.py"
+install -m644 "$REPO/bin/theme_effects.py" "$HOME/.local/bin/theme_effects.py"
+install -m644 "$REPO/bin/theme_homepage.py" "$HOME/.local/bin/theme_homepage.py"
 ensure_shell_path "$HOME/.zshrc"
 ensure_shell_path "$HOME/.bashrc"
 
@@ -32,7 +34,7 @@ pkg_bin() { case "$1" in neovim) echo nvim ;; *) echo "$1" ;; esac; }
 maybe_install_packages() {
     local de="$1"
     local want=(kitty starship neovim zsh)
-    [ "$de" = hyprland ] && want+=(waybar wofi dunst hyprlock)
+    [ "$de" = hyprland ] && want+=(waybar wofi dunst hyprlock eww)
 
     local missing=()
     for pkg in "${want[@]}"; do
@@ -112,6 +114,7 @@ write_targets_conf() {
                 has wofi || opt rofi rofi
                 opt dunst dunst
                 opt hyprlock hyprlock
+                opt homepage eww
                 echo "# kde"
                 echo "# oomox"
                 echo "# gtk"
