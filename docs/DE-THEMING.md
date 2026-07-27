@@ -27,6 +27,28 @@ other line below to enable it by hand.
 | gtk | GTK fallback (no oomox) | `@define-color` overrides in gtk.css — partial recolor |
 | xfce | xfce4-terminal | color scheme |
 
+## Pywal and pywalfox compatibility
+
+`theme-pywalfox [theme-name]` exports any theme to the standard
+`$XDG_CACHE_HOME/wal/colors.json` format and runs `pywalfox update` when the
+native host is installed. With no theme name it exports the currently active
+theme.
+
+```sh
+theme catppuccin_mocha
+theme-pywalfox
+
+# Or export another theme without applying it first:
+theme-pywalfox nord
+```
+
+The compatibility cache includes an ordered 16-color palette, special colors,
+and the wallpaper path required by pywalfox. It does not change the source theme
+or apply a second desktop reload pipeline.
+
+The planned automatic `pywal` target and image-to-theme work are documented in
+[`PYWAL-INTEGRATION-PLAN.md`](PYWAL-INTEGRATION-PLAN.md).
+
 ## Non-invasive & reversible
 - Nothing overwrites your own config; each app gains one `@import`/`@theme` line
   (backed up) or a separate generated file.
