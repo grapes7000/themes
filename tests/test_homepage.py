@@ -85,11 +85,14 @@ def test_workspace_is_dynamic_and_clickable():
     assert "ws == 1" not in yuck
 
 
-def test_overlay_has_fixed_widget_height_not_full_screen():
+def test_overlay_is_fullscreen_with_fixed_widget_column(monkeypatch):
+    monkeypatch.setattr(theme_homepage, "_monitor_size", lambda: (1920, 1080))
     yuck = theme_homepage.render_yuck({"alignment": "right"})
     assert 'anchor "top right"' in yuck
-    assert ':height "100%"' not in yuck
-    assert ':height "820px"' in yuck
+    assert ':width "100%"' in yuck
+    assert ':height "100%"' in yuck
+    assert ':halign "end"' in yuck
+    assert ':width 430' in yuck
 
 
 def test_generated_labels_are_escaped():
@@ -103,9 +106,11 @@ def test_wallpaper_priority_and_background_widget(tmp_path, monkeypatch):
     generated = tmp_path / "hypr" / "wallpapers" / "rose-pine.png"
     generated.parent.mkdir(parents=True)
     generated.write_bytes(b"png")
+    monkeypatch.setattr(theme_homepage, "_monitor_size", lambda: (2560, 1440))
     yuck = theme_homepage.render_yuck({"alignment": "left"}, "rose-pine")
     assert str(generated) in yuck
-    assert 'image-width 430' in yuck
+    assert 'image-width 2560' in yuck
+    assert 'image-height 1440' in yuck
     assert 'homepage-background-fallback' not in yuck
 
 
