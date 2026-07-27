@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Export any theme-engine theme as a canonical pywal colors.json.
+"""Export any theme-engine theme as a pywalfox-compatible colors.json.
 
 Pywalfox reads $XDG_CACHE_HOME/wal/colors.json and requires both a
 16-color `colors` object and a `wallpaper` key. This command creates that
 cache from the theme engine's semantic roles without applying any
 color-family preference.
+
+Pywalfox's built-in templates consume particular pywal indexes as browser
+UI roles rather than treating all 16 entries as a terminal palette. The
+exporter therefore preserves the ANSI palette as a base, then places the
+semantic theme accents/background/text into the indexes Pywalfox actually
+uses for dark or light browser themes.
 
 Usage:
     theme-pywalfox                  # export the active theme
@@ -67,7 +73,7 @@ def _role(roles: dict[str, Any], key: str, fallback_key: str) -> str:
 
 
 def ansi_palette(roles: dict[str, Any]) -> list[str]:
-    """Build 16 pywal colors, deriving sensible values for incomplete themes."""
+    """Build 16 ANSI colors, deriving sensible values for incomplete themes."""
     fallback_keys = {
         "ansi_black": "bg",
         "ansi_red": "urgent",
@@ -87,6 +93,36 @@ def ansi_palette(roles: dict[str, Any]) -> list[str]:
         "ansi_br_white": "text",
     }
     return [_role(roles, key, fallback_keys[key]) for key in ANSI_KEYS]
+
+
+def pywalfox_palette(roles: dict[str, Any], dark: bool) -> list[str]:
+    """Return a 16-color palette optimized for Pywalfox's default templates.
+
+    Pywalfox dark mode maps color0/background, color15/text, color10/primary
+    accent and color13/secondary accent. Light mode maps color7/background,
+    color0/text, color3/primary accent and color5/secondary accent.
+
+    All unconsumed slots retain their original ANSI values so ordinary pywal
+    consumers still receive a complete and recognizable palette.
+    """
+    colors = ansi_palette(roles)
+    background = _role(roles, "bg", "ansi_black")
+    text = _role(roles, "text", "ansi_br_white")
+    accent = _role(roles, "accent", "ansi_magenta")
+    accent2 = _role(roles, "accent2", "ansi_blue")
+
+    if dark:
+        colors[0] = background
+        colors[10] = accent
+        colors[13] = accent2
+        colors[15] = text
+    else:
+        colors[0] = text
+        colors[3] = accent
+        colors[5] = accent2
+        colors[7] = background
+
+    return colors
 
 
 def resolve_wallpaper(theme_name: str, explicit: str | None = None) -> Path:
@@ -138,7 +174,8 @@ def active_theme(active_file: Path) -> str:
 
 def build_payload(theme_name: str, data: dict[str, Any], wallpaper: Path) -> dict[str, Any]:
     roles = data["roles"]
-    colors = ansi_palette(roles)
+    dark = bool(data.get("dark", True))
+    colors = pywalfox_palette(roles, dark)
     background = _role(roles, "bg", "ansi_black")
     foreground = _role(roles, "text", "ansi_br_white")
     cursor = _role(roles, "cursor", "accent")
@@ -154,8 +191,9 @@ def build_payload(theme_name: str, data: dict[str, Any], wallpaper: Path) -> dic
         "colors": {f"color{i}": color for i, color in enumerate(colors)},
         "theme_engine": {
             "name": theme_name,
-            "dark": bool(data.get("dark", True)),
+            "dark": dark,
             "source": "theme-engine",
+            "mapping": "pywalfox-semantic-v1",
         },
     }
 
