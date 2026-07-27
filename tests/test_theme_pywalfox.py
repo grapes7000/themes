@@ -7,15 +7,17 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "bin" / "theme-pywalfox"
-SPEC = importlib.util.spec_from_file_location("theme_pywalfox_cli", SCRIPT)
-if SPEC is None or SPEC.loader is None:
+LOADER = SourceFileLoader("theme_pywalfox_cli", str(SCRIPT))
+SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
+if SPEC is None:
     raise RuntimeError(f"could not load {SCRIPT}")
 MODULE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(MODULE)
+LOADER.exec_module(MODULE)
 
 
 class PywalfoxExportTests(unittest.TestCase):
