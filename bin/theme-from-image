@@ -1,0 +1,503 @@
+#!/usr/bin/env python3
+"""Generate a reusable theme-engine theme from an image with pywal16.
+
+Examples:
+    theme-from-image ~/Pictures/sunset.jpg --name sunset
+    theme-from-image ~/Pictures/sunset.jpg --name sunset --apply
+    theme-from-image wallpaper.png --name airy --light --backend colorthief
+    theme-from-image wallpaper.png --preview
+
+Pywal16 is used only to extract a palette. Its wallpaper setter, terminal escape
+sequences, TTY updates, and desktop reload hooks are disabled. The resulting
+palette is converted into a normal theme-engine JSON file and a durable PNG copy
+of the wallpaper.
+"""
+
+from __future__ import annotations
+
+import argparse
+import colorsys
+import json
+import math
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Any, Iterable
+
+HOME = Path.home()
+XDG_CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config"))
+DEFAULT_THEME_DIR = XDG_CONFIG_HOME / "hypr" / "themes"
+DEFAULT_WALLPAPER_DIR = XDG_CONFIG_HOME / "hypr" / "wallpapers"
+DEFAULT_ACTIVE_FILE = XDG_CONFIG_HOME / "hypr" / "generated" / ".active"
+HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+ANSI_KEYS = (
+    "ansi_black",
+    "ansi_red",
+    "ansi_green",
+    "ansi_yellow",
+    "ansi_blue",
+    "ansi_magenta",
+    "ansi_cyan",
+    "ansi_white",
+    "ansi_br_black",
+    "ansi_br_red",
+    "ansi_br_green",
+    "ansi_br_yellow",
+    "ansi_br_blue",
+    "ansi_br_magenta",
+    "ansi_br_cyan",
+    "ansi_br_white",
+)
+
+
+def valid_color(value: Any) -> bool:
+    return isinstance(value, str) and HEX_COLOR.fullmatch(value) is not None
+
+
+def normalize_color(value: Any, fallback: str) -> str:
+    if valid_color(value):
+        return str(value).lower()
+    return fallback.lower()
+
+
+def slugify(value: str) -> str:
+    name = re.sub(r"[^a-z0-9_-]+", "-", value.strip().lower()).strip("-_")
+    if not name:
+        raise ValueError("theme name is empty after normalization")
+    return name
+
+
+def rgb(color: str) -> tuple[int, int, int]:
+    value = color.lstrip("#")
+    return tuple(int(value[index : index + 2], 16) for index in (0, 2, 4))  # type: ignore[return-value]
+
+
+def hex_color(channels: Iterable[float]) -> str:
+    vals = [max(0, min(255, round(channel))) for channel in channels]
+    return "#" + "".join(f"{value:02x}" for value in vals)
+
+
+def mix(first: str, second: str, amount: float) -> str:
+    amount = max(0.0, min(1.0, amount))
+    a = rgb(first)
+    b = rgb(second)
+    return hex_color((x + (y - x) * amount for x, y in zip(a, b)))
+
+
+def relative_luminance(color: str) -> float:
+    def channel(value: int) -> float:
+        normalized = value / 255.0
+        return normalized / 12.92 if normalized <= 0.04045 else ((normalized + 0.055) / 1.055) ** 2.4
+
+    red, green, blue = (channel(value) for value in rgb(color))
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def contrast_ratio(first: str, second: str) -> float:
+    high, low = sorted((relative_luminance(first), relative_luminance(second)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def saturation(color: str) -> float:
+    red, green, blue = (value / 255.0 for value in rgb(color))
+    return colorsys.rgb_to_hsv(red, green, blue)[1]
+
+
+def hue(color: str) -> float:
+    red, green, blue = (value / 255.0 for value in rgb(color))
+    return colorsys.rgb_to_hsv(red, green, blue)[0]
+
+
+def hue_distance(first: str, second: str) -> float:
+    distance = abs(hue(first) - hue(second))
+    return min(distance, 1.0 - distance) * 2.0
+
+
+def color_distance(first: str, second: str) -> float:
+    a = rgb(first)
+    b = rgb(second)
+    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b))) / math.sqrt(3 * 255**2)
+
+
+def validate_pywal_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    special = payload.get("special")
+    colors = payload.get("colors")
+    if not isinstance(special, dict) or not isinstance(colors, dict):
+        raise ValueError("pywal colors.json is missing special/colors objects")
+
+    for key in ("background", "foreground", "cursor"):
+        if not valid_color(special.get(key)):
+            raise ValueError(f"pywal colors.json has an invalid special.{key}")
+    for index in range(16):
+        key = f"color{index}"
+        if not valid_color(colors.get(key)):
+            raise ValueError(f"pywal colors.json has an invalid {key}")
+    return payload
+
+
+def accent_score(color: str, background: str) -> float:
+    contrast = min(contrast_ratio(color, background), 9.0) / 9.0
+    chroma = saturation(color)
+    middle = 1.0 - abs(relative_luminance(color) - 0.5)
+    return contrast * 0.48 + chroma * 0.40 + middle * 0.12
+
+
+def choose_accents(colors: list[str], background: str) -> tuple[str, str]:
+    candidates: list[str] = []
+    for index in (*range(1, 7), *range(9, 15)):
+        candidate = colors[index]
+        if candidate not in candidates and color_distance(candidate, background) >= 0.12:
+            candidates.append(candidate)
+    if not candidates:
+        candidates = [colors[4], colors[5], colors[6], colors[12], colors[13], colors[14]]
+
+    primary = max(candidates, key=lambda color: accent_score(color, background))
+    remaining = [color for color in candidates if color != primary]
+    if not remaining:
+        return primary, primary
+
+    secondary = max(
+        remaining,
+        key=lambda color: (
+            accent_score(color, background) * 0.55
+            + hue_distance(color, primary) * 0.30
+            + color_distance(color, primary) * 0.15
+        ),
+    )
+    return primary, secondary
+
+
+def load_style(theme_dir: Path, active_file: Path, style_from: str | None) -> tuple[dict[str, Any], str | None]:
+    source = style_from
+    if source is None:
+        try:
+            source = active_file.read_text(encoding="utf-8").strip() or None
+        except OSError:
+            source = None
+    if source is None and (theme_dir / "catppuccin_mocha.json").exists():
+        source = "catppuccin_mocha"
+    if source is None:
+        return {}, None
+
+    path = theme_dir / f"{source}.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"style source theme '{source}' was not found at {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"style source theme '{source}' contains invalid JSON: {exc}") from exc
+    style = data.get("style", {})
+    if not isinstance(style, dict):
+        raise ValueError(f"style source theme '{source}' has an invalid style object")
+    return dict(style), source
+
+
+def theme_from_pywal(
+    name: str,
+    payload: dict[str, Any],
+    *,
+    dark: bool,
+    wallpaper: Path,
+    style: dict[str, Any] | None = None,
+    style_source: str | None = None,
+    backend: str | None = None,
+    cols16: str | None = None,
+    saturate_value: float | None = None,
+    contrast_value: float | None = None,
+) -> dict[str, Any]:
+    validate_pywal_payload(payload)
+    special = payload["special"]
+    raw_colors = payload["colors"]
+    colors = [str(raw_colors[f"color{index}"]).lower() for index in range(16)]
+    background = str(special["background"]).lower()
+    foreground = str(special["foreground"]).lower()
+    cursor = str(special["cursor"]).lower()
+    accent, accent2 = choose_accents(colors, background)
+
+    bg_alt = mix(background, foreground, 0.10 if dark else 0.07)
+    text_dim = mix(foreground, background, 0.28)
+    border = mix(background, foreground, 0.18)
+    urgent_candidates = (colors[1], colors[9])
+    urgent = max(urgent_candidates, key=lambda color: accent_score(color, background))
+    selection_fg = max((background, foreground), key=lambda color: contrast_ratio(color, accent))
+
+    roles: dict[str, str] = {
+        "bg": background,
+        "bg_alt": bg_alt,
+        "text": foreground,
+        "text_dim": text_dim,
+        "focus": accent,
+        "border_normal": border,
+        "accent": accent,
+        "accent2": accent2,
+        "urgent": urgent,
+        "sel_bg": accent,
+        "sel_fg": selection_fg,
+        "cursor": cursor,
+    }
+    roles.update({key: colors[index] for index, key in enumerate(ANSI_KEYS)})
+
+    return {
+        "name": name,
+        "roles": roles,
+        "dark": dark,
+        "style": dict(style or {}),
+        "generated": {
+            "engine": "pywal16",
+            "source_image": str(wallpaper),
+            "style_from": style_source,
+            "backend": backend or "default",
+            "cols16": cols16 or ("darken" if dark else "lighten"),
+            "saturate": saturate_value,
+            "contrast": contrast_value,
+        },
+    }
+
+
+def pywal_install_hint() -> str:
+    return (
+        "Install the maintained pywal16 first:\n"
+        "  sudo pacman -S --needed imagemagick python-pipx\n"
+        "  pipx install 'pywal16[all]'\n"
+        "Then open a new shell and confirm: wal -v"
+    )
+
+
+def ensure_pywal16(executable: str) -> None:
+    try:
+        result = subprocess.run(
+            [executable, "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except OSError as exc:
+        raise ValueError(f"could not run {executable}: {exc}") from exc
+    help_text = (result.stdout or "") + (result.stderr or "")
+    if result.returncode not in (0, 1) or "--cols16" not in help_text:
+        raise ValueError("the installed 'wal' is not pywal16 or is too old\n" + pywal_install_hint())
+
+
+def run_pywal(
+    image: Path,
+    *,
+    wal: str,
+    dark: bool,
+    backend: str | None,
+    cols16: str,
+    saturate_value: float | None,
+    contrast_value: float | None,
+) -> dict[str, Any]:
+    ensure_pywal16(wal)
+    with tempfile.TemporaryDirectory(prefix="theme-pywal16-") as temporary:
+        output_dir = Path(temporary)
+        command = [
+            wal,
+            "-i",
+            str(image),
+            "-n",
+            "-s",
+            "-t",
+            "-e",
+            "--cols16",
+            cols16,
+            "--out-dir",
+            str(output_dir),
+        ]
+        if not dark:
+            command.append("-l")
+        if backend:
+            command.extend(("--backend", backend))
+        if saturate_value is not None:
+            command.extend(("--saturate", str(saturate_value)))
+        if contrast_value is not None:
+            command.extend(("--contrast", str(contrast_value)))
+
+        environment = os.environ.copy()
+        environment.update({"NO_FUN": "1", "EASTEREGGS": "0"})
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=180,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "unknown pywal16 error").strip()
+            raise ValueError(f"pywal16 palette generation failed: {detail}")
+
+        colors_path = output_dir / "colors.json"
+        try:
+            payload = json.loads(colors_path.read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise ValueError(f"pywal16 did not create {colors_path}") from exc
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"pywal16 created invalid JSON: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("pywal16 colors.json root must be an object")
+        return validate_pywal_payload(payload)
+
+
+def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def copy_wallpaper_png(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.suffix.lower() == ".png":
+        temporary = destination.with_name(destination.name + ".tmp")
+        shutil.copy2(source, temporary)
+        os.replace(temporary, destination)
+        return
+
+    converter = shutil.which("magick") or shutil.which("convert")
+    if not converter:
+        raise ValueError(
+            "ImageMagick is required to make the permanent PNG wallpaper copy.\n"
+            "Install it with: sudo pacman -S --needed imagemagick"
+        )
+    temporary = destination.with_name(destination.stem + ".tmp.png")
+    result = subprocess.run(
+        [converter, str(source), str(temporary)],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    if result.returncode != 0:
+        temporary.unlink(missing_ok=True)
+        detail = (result.stderr or result.stdout or "unknown ImageMagick error").strip()
+        raise ValueError(f"wallpaper conversion failed: {detail}")
+    os.replace(temporary, destination)
+
+
+def find_theme_command() -> str | None:
+    sibling = Path(__file__).resolve().with_name("theme")
+    if sibling.exists():
+        return str(sibling)
+    return shutil.which("theme")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate a reusable theme-engine theme from an image with pywal16"
+    )
+    parser.add_argument("image", type=Path, help="source image")
+    parser.add_argument("--name", help="theme name; defaults to wal-<image-name>")
+    parser.add_argument("--light", action="store_true", help="generate a light theme")
+    parser.add_argument("--backend", help="pywal16 backend; omit for its default")
+    parser.add_argument(
+        "--cols16",
+        choices=("darken", "lighten", "dual", "foxify-darken", "foxify-lighten", "foxify-dual"),
+        help="pywal16 16-color method; defaults to darken/lighten based on mode",
+    )
+    parser.add_argument("--saturate", type=float, help="pywal16 saturation adjustment (-1.0 to 1.0)")
+    parser.add_argument("--contrast", type=float, help="minimum pywal16 contrast ratio (1.0 to 21.0)")
+    parser.add_argument("--style-from", help="copy visual style from an installed theme")
+    parser.add_argument("--force", action="store_true", help="replace an existing generated theme")
+    parser.add_argument("--apply", action="store_true", help="apply the new theme after saving")
+    parser.add_argument("--preview", action="store_true", help="print generated theme JSON without saving")
+    parser.add_argument("--theme-dir", type=Path, default=DEFAULT_THEME_DIR)
+    parser.add_argument("--wallpaper-dir", type=Path, default=DEFAULT_WALLPAPER_DIR)
+    parser.add_argument("--active-file", type=Path, default=DEFAULT_ACTIVE_FILE)
+    parser.add_argument("--wal", help=argparse.SUPPRESS)
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    image = args.image.expanduser().resolve()
+    if not image.is_file():
+        raise SystemExit(f"theme-from-image: image not found: {image}")
+
+    try:
+        name = slugify(args.name or f"wal-{image.stem}")
+    except ValueError as exc:
+        raise SystemExit(f"theme-from-image: {exc}") from exc
+    if not NAME_PATTERN.fullmatch(name):
+        raise SystemExit("theme-from-image: name must contain lowercase letters, numbers, - or _")
+
+    if args.saturate is not None and not -1.0 <= args.saturate <= 1.0:
+        raise SystemExit("theme-from-image: --saturate must be between -1.0 and 1.0")
+    if args.contrast is not None and not 1.0 <= args.contrast <= 21.0:
+        raise SystemExit("theme-from-image: --contrast must be between 1.0 and 21.0")
+
+    theme_dir = args.theme_dir.expanduser().resolve()
+    wallpaper_dir = args.wallpaper_dir.expanduser().resolve()
+    active_file = args.active_file.expanduser().resolve()
+    theme_path = theme_dir / f"{name}.json"
+    wallpaper_path = wallpaper_dir / f"{name}.png"
+    if not args.preview and not args.force and (theme_path.exists() or wallpaper_path.exists()):
+        raise SystemExit(
+            f"theme-from-image: '{name}' already exists; choose another --name or use --force"
+        )
+
+    wal = args.wal or shutil.which("wal")
+    if not wal:
+        raise SystemExit("theme-from-image: 'wal' was not found\n" + pywal_install_hint())
+    dark = not args.light
+    cols16 = args.cols16 or ("darken" if dark else "lighten")
+
+    try:
+        style, style_source = load_style(theme_dir, active_file, args.style_from)
+        payload = run_pywal(
+            image,
+            wal=wal,
+            dark=dark,
+            backend=args.backend,
+            cols16=cols16,
+            saturate_value=args.saturate,
+            contrast_value=args.contrast,
+        )
+        theme = theme_from_pywal(
+            name,
+            payload,
+            dark=dark,
+            wallpaper=wallpaper_path,
+            style=style,
+            style_source=style_source,
+            backend=args.backend,
+            cols16=cols16,
+            saturate_value=args.saturate,
+            contrast_value=args.contrast,
+        )
+        if args.preview:
+            print(json.dumps(theme, indent=2))
+            return 0
+
+        copy_wallpaper_png(image, wallpaper_path)
+        atomic_write_json(theme_path, theme)
+    except ValueError as exc:
+        raise SystemExit(f"theme-from-image: {exc}") from exc
+
+    print(f"created theme -> {theme_path}")
+    print(f"copied wallpaper -> {wallpaper_path}")
+    if args.apply:
+        theme_command = find_theme_command()
+        if not theme_command:
+            raise SystemExit(f"theme-from-image: saved '{name}', but the theme command was not found")
+        result = subprocess.run([theme_command, name], check=False)
+        return result.returncode
+    print(f"apply it -> theme {name}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
