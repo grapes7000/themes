@@ -4,12 +4,17 @@
     theme                 # list themes (marks the active one)
     theme <name>          # switch: regenerate hypr/waybar/kitty/starship + reload
     theme --list          # bare list, one per line
+    theme effects         # show active effects preset
+    theme effects <name>  # switch effects preset (minimal/calm/polished/cyber)
+    theme effects --list  # list available presets
+    theme effects none    # clear preset, use theme defaults
 
 Single source of truth: ~/.config/hypr/themes/<name>.json
 Everything under */generated/ is written by this script — never edit it by hand.
 """
 import json, os, sys, glob, subprocess, signal, shutil, time, re
 from theme_starship import render as render_starship
+import theme_effects
 
 HOME = os.path.expanduser("~")
 CFG = os.path.join(HOME, ".config")
@@ -95,7 +100,8 @@ def write(path, text):
         f.write(text)
 
 
-def gen_hypr(r, s):
+def gen_hypr(r, s, effects_preset=None):
+    s = theme_effects.resolve(s, effects_preset)
     blur_on = str(s.get("blur_on", "true")).lower() == "true"
     shadow_on = str(s.get("shadow_on", "true")).lower() == "true"
     gaps = int(s.get("gaps", 8))
@@ -138,6 +144,7 @@ def gen_hypr(r, s):
         "    }",
         "}",
     ]
+    lines.extend(theme_effects.render_animations(effects_preset))
     write(os.path.join(CFG, "hypr", "generated", "theme.conf"), "\n".join(lines) + "\n")
 
 
@@ -1014,7 +1021,8 @@ def apply(name):
     t = json.load(open(path))
     r, s, dark = t["roles"], t.get("style", {}), t.get("dark", True)
     tg = load_targets()
-    if "hypr" in tg:      gen_hypr(r, s)
+    effects_preset = theme_effects.profile()
+    if "hypr" in tg:      gen_hypr(r, s, effects_preset)
     if "waybar" in tg:    gen_waybar(r)
     if "kitty" in tg:     gen_kitty(r, s)
     if "starship" in tg:  gen_starship(r)
@@ -1058,6 +1066,33 @@ def font_cmd(args):
         apply(cur)          # re-apply current theme so the font propagates
 
 
+def effects_cmd(args):
+    """`theme effects [preset | --list]` — the effects axis (independent of color)."""
+    if args and args[0] in ("-l", "--list"):
+        print("\n".join(theme_effects.list_presets()))
+        return
+    if not args:
+        cur = theme_effects.profile()
+        print(cur or "(none — using theme defaults)")
+        return
+    name = args[0]
+    if name == "none":
+        theme_effects.save(None)
+        print("effects -> none (using theme defaults)")
+        cur = active()
+        if cur:
+            apply(cur)
+        return
+    if not theme_effects.validate_preset(name):
+        avail = ", ".join(theme_effects.list_presets())
+        sys.exit(f"theme effects: unknown preset '{name}'. Available: {avail}")
+    theme_effects.save(name)
+    print(f"effects -> {name}")
+    cur = active()
+    if cur:
+        apply(cur)
+
+
 def main():
     args = sys.argv[1:]
     if args and args[0] == "starship":
@@ -1070,6 +1105,8 @@ def main():
         gen_starship(json.load(open(path))["roles"])
         print(f"starship -> {cur}")
         return
+    if args and args[0] == "effects":
+        effects_cmd(args[1:]); return
     if args and args[0] == "font":
         font_cmd(args[1:]); return
     if args and args[0] in ("-l", "--list"):
