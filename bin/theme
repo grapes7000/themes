@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 """theme — one command to re-skin the whole desktop.
 
-    theme                 # list themes (marks the active one)
+    theme                 # TUI picker (interactive)
     theme <name>          # switch: regenerate hypr/waybar/kitty/starship + reload
     theme --list          # bare list, one per line
-    theme effects         # show active effects preset
-    theme effects <name>  # switch effects preset (minimal/calm/polished/cyber)
-    theme effects --list  # list available presets
-    theme effects none    # clear preset, use theme defaults
+    theme shape           # show active shape
+    theme shape <name>    # switch shape (sharp/rounded/pillowy/boxy)
+    theme shape --list    # list available shapes
+    theme shape none      # clear shape, use theme defaults
+    theme texture         # show active texture
+    theme texture <name>  # switch texture (clear/frosted/glaze/haze/bloom)
+    theme texture --list  # list available textures
+    theme texture none    # clear texture, use theme defaults
+    theme anim            # show active animation style
+    theme anim <name>     # switch anim (none/subtle/smooth/snappy/bouncy/dramatic/glitch)
+    theme anim --list     # list available anims
+    theme anim none       # clear anim, use theme defaults
+    theme effects         # (back-compat) show active texture
     theme homepage        # show homepage status
     theme homepage on     # enable + start the desktop homepage overlay
     theme homepage off    # disable + stop the overlay
@@ -106,8 +115,8 @@ def write(path, text):
         f.write(text)
 
 
-def gen_hypr(r, s, effects_preset=None):
-    s = theme_effects.resolve(s, effects_preset)
+def gen_hypr(r, s, shape_name=None, texture_name=None, anim_name=None):
+    s = theme_effects.resolve(s, shape_name, texture_name)
     blur_on = str(s.get("blur_on", "true")).lower() == "true"
     shadow_on = str(s.get("shadow_on", "true")).lower() == "true"
     gaps = int(s.get("gaps", 8))
@@ -131,6 +140,7 @@ def gen_hypr(r, s, effects_preset=None):
         "",
         "decoration {",
         f"    rounding = {int(s.get('corner_radius', 10))}",
+        f"    rounding_power = {float(s.get('rounding_power', 2.0))}",
         f"    active_opacity = {float(s.get('opacity', 1.0))}",
         f"    inactive_opacity = {float(s.get('opacity_inactive', 1.0))}",
         f"    dim_inactive = {'true' if float(s.get('inactive_dim', 0)) > 0 else 'false'}",
@@ -138,19 +148,34 @@ def gen_hypr(r, s, effects_preset=None):
         "    blur {",
         f"        enabled = {'true' if blur_on else 'false'}",
         f"        size = {int(s.get('blur_strength', 8))}",
-        "        passes = 3",
+        f"        passes = {int(s.get('blur_passes', 3))}",
+        f"        noise = {float(s.get('blur_noise', 0.0117))}",
+        f"        contrast = {float(s.get('blur_contrast', 0.8916))}",
+        f"        brightness = {float(s.get('blur_brightness', 0.8172))}",
+        f"        vibrancy = {float(s.get('blur_vibrancy', 0.1696))}",
         "        new_optimizations = true",
         "        xray = false",
         "    }",
         "    shadow {",
         f"        enabled = {'true' if shadow_on else 'false'}",
         f"        range = {int(s.get('shadow_radius', 20))}",
-        "        render_power = 3",
+        f"        render_power = {int(s.get('shadow_render_power', 3))}",
+        f"        offset = {s.get('shadow_offset', '0 0')}",
         f"        color = rgba({h(s.get('shadow_color', '#000000'))}{a(s.get('shadow_opacity', 0.4))})",
         "    }",
         "}",
     ]
-    lines.extend(theme_effects.render_animations(effects_preset))
+    if s.get("bar_blur"):
+        for ns in ("waybar", "wofi", "rofi"):
+            lines.extend([
+                "",
+                "layerrule {",
+                f"    name = {ns}-blur",
+                f"    match:namespace = {ns}",
+                "    blur = yes",
+                "}",
+            ])
+    lines.extend(theme_effects.render_animations(anim_name))
     write(os.path.join(CFG, "hypr", "generated", "theme.conf"), "\n".join(lines) + "\n")
 
 
@@ -595,12 +620,12 @@ label {{
     write(os.path.join(CFG, "hypr", "hyprlock.conf"), cfg)
 
 
-def gen_homepage(r, s, name, effects_preset=None):
+def gen_homepage(r, s, name, texture_name=None):
     eww_dir = os.path.join(CFG, "eww", "homepage")
-    scss = theme_homepage.render_scss(r, s, effects_preset)
+    scss = theme_homepage.render_scss(r, s, texture_name)
     write(os.path.join(eww_dir, "eww.scss"), scss)
     hp = theme_homepage.profile()
-    yuck = theme_homepage.render_yuck(hp, theme_name=name, effects_preset=effects_preset)
+    yuck = theme_homepage.render_yuck(hp, theme_name=name, effects_preset=texture_name)
     write(os.path.join(eww_dir, "eww.yuck"), yuck)
     scripts_dir = os.path.join(eww_dir, "scripts")
     for fname, content in theme_homepage.render_scripts().items():
@@ -1044,8 +1069,10 @@ def apply(name):
     t = json.load(open(path))
     r, s, dark = t["roles"], t.get("style", {}), t.get("dark", True)
     tg = load_targets()
-    effects_preset = theme_effects.profile()
-    if "hypr" in tg:      gen_hypr(r, s, effects_preset)
+    shape_name = theme_effects.profile_shape()
+    texture_name = theme_effects.profile_texture()
+    anim_name = theme_effects.profile_anim()
+    if "hypr" in tg:      gen_hypr(r, s, shape_name, texture_name, anim_name)
     if "waybar" in tg:    gen_waybar(r)
     if "kitty" in tg:     gen_kitty(r, s)
     if "starship" in tg:  gen_starship(r)
@@ -1056,7 +1083,7 @@ def apply(name):
     if "rofi" in tg:      gen_rofi(r, s)
     if "dunst" in tg:     gen_dunst(r, s)
     if "hyprlock" in tg:  gen_hyprlock(r, s)
-    if "homepage" in tg:  gen_homepage(r, s, name, effects_preset)
+    if "homepage" in tg:  gen_homepage(r, s, name, texture_name)
     if "obsidian" in tg:  gen_obsidian(r, dark, tg["obsidian"])
     if "firefox" in tg:   gen_firefox(r, dark)
     if "kde" in tg:       gen_kde(r, s, dark)
@@ -1090,31 +1117,54 @@ def font_cmd(args):
         apply(cur)          # re-apply current theme so the font propagates
 
 
-def effects_cmd(args):
-    """`theme effects [preset | --list]` — the effects axis (independent of color)."""
+def _axis_cmd(axis, args, validate, save_fn, list_fn, profile_fn):
+    """Generic handler for shape/texture/anim subcommands."""
     if args and args[0] in ("-l", "--list"):
-        print("\n".join(theme_effects.list_presets()))
+        print("\n".join(list_fn()))
         return
     if not args:
-        cur = theme_effects.profile()
+        cur = profile_fn()
         print(cur or "(none — using theme defaults)")
         return
     name = args[0]
     if name == "none":
-        theme_effects.save(None)
-        print("effects -> none (using theme defaults)")
+        save_fn(None)
+        print(f"{axis} -> none (using theme defaults)")
         cur = active()
         if cur:
             apply(cur)
         return
-    if not theme_effects.validate_preset(name):
-        avail = ", ".join(theme_effects.list_presets())
-        sys.exit(f"theme effects: unknown preset '{name}'. Available: {avail}")
-    theme_effects.save(name)
-    print(f"effects -> {name}")
+    if not validate(name):
+        avail = ", ".join(list_fn())
+        sys.exit(f"theme {axis}: unknown {axis} '{name}'. Available: {avail}")
+    save_fn(name)
+    print(f"{axis} -> {name}")
     cur = active()
     if cur:
         apply(cur)
+
+
+def shape_cmd(args):
+    _axis_cmd("shape", args, theme_effects.validate_shape,
+              theme_effects.save_shape, theme_effects.list_shapes,
+              theme_effects.profile_shape)
+
+
+def texture_cmd(args):
+    _axis_cmd("texture", args, theme_effects.validate_texture,
+              theme_effects.save_texture, theme_effects.list_textures,
+              theme_effects.profile_texture)
+
+
+def anim_cmd(args):
+    _axis_cmd("anim", args, theme_effects.validate_anim,
+              theme_effects.save_anim, theme_effects.list_anims,
+              theme_effects.profile_anim)
+
+
+def effects_cmd(args):
+    """Back-compat: `theme effects` maps to `theme texture`."""
+    texture_cmd(args)
 
 
 def homepage_cmd(args):
@@ -1168,6 +1218,138 @@ def homepage_cmd(args):
     sys.exit(f"theme homepage: unknown command '{cmd}'. Try: on, off, restart, left, right")
 
 
+def tui():
+    """Interactive TUI for picking theme, shape, texture, and anim with live preview."""
+    import curses
+
+    all_themes = themes()
+    all_shapes = ["(none)"] + theme_effects.list_shapes()
+    all_textures = ["(none)"] + theme_effects.list_textures()
+    all_anims = ["(none)"] + theme_effects.list_anims()
+
+    columns = [
+        ("THEME", all_themes),
+        ("SHAPE", all_shapes),
+        ("TEXTURE", all_textures),
+        ("ANIM", all_anims),
+    ]
+
+    cur_theme = active() or all_themes[0]
+    cur_shape = theme_effects.profile_shape()
+    cur_texture = theme_effects.profile_texture()
+    cur_anim = theme_effects.profile_anim()
+
+    sel = [
+        all_themes.index(cur_theme) if cur_theme in all_themes else 0,
+        all_shapes.index(cur_shape) if cur_shape in all_shapes else 0,
+        all_textures.index(cur_texture) if cur_texture in all_textures else 0,
+        all_anims.index(cur_anim) if cur_anim in all_anims else 0,
+    ]
+    orig = list(sel)
+    col = 0
+
+    def val(c, i):
+        v = columns[c][1][i]
+        return None if v == "(none)" else v
+
+    def apply_current():
+        t = val(0, sel[0]) or all_themes[0]
+        sh = val(1, sel[1])
+        tx = val(2, sel[2])
+        an = val(3, sel[3])
+        if sh is not None:
+            theme_effects.save_shape(sh)
+        else:
+            theme_effects.save_shape(None)
+        if tx is not None:
+            theme_effects.save_texture(tx)
+        else:
+            theme_effects.save_texture(None)
+        if an is not None:
+            theme_effects.save_anim(an)
+        else:
+            theme_effects.save_anim(None)
+        apply(t)
+
+    def run(stdscr):
+        nonlocal col
+        curses.curs_set(0)
+        curses.start_color()
+        curses.use_default_colors()
+        curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)
+        curses.init_pair(2, curses.COLOR_CYAN, -1)
+        curses.init_pair(3, curses.COLOR_GREEN, -1)
+        curses.init_pair(4, curses.COLOR_YELLOW, -1)
+
+        last_applied = None
+
+        while True:
+            stdscr.erase()
+            h, w = stdscr.getmaxyx()
+            col_w = max(20, w // 4)
+
+            stdscr.addnstr(0, 0, " THEME PICKER — ←→ columns  ↑↓ select  Enter confirm  q cancel",
+                          w - 1, curses.A_BOLD | curses.color_pair(4))
+
+            current_key = tuple(sel)
+            if current_key != last_applied:
+                last_applied = current_key
+                try:
+                    apply_current()
+                except Exception:
+                    pass
+
+            for ci, (label, items) in enumerate(columns):
+                x = ci * col_w
+                style = curses.A_BOLD | curses.color_pair(2) if ci == col else curses.A_BOLD
+                if x < w:
+                    stdscr.addnstr(2, x, label, min(col_w, w - x), style)
+
+                max_rows = h - 4
+                offset = max(0, sel[ci] - max_rows // 2)
+                for row_i, idx in enumerate(range(offset, min(len(items), offset + max_rows))):
+                    y = 3 + row_i
+                    if y >= h:
+                        break
+                    item = items[idx]
+                    if ci == col and idx == sel[ci]:
+                        st = curses.color_pair(1) | curses.A_BOLD
+                    elif idx == sel[ci]:
+                        st = curses.color_pair(3)
+                    else:
+                        st = 0
+                    if x < w:
+                        stdscr.addnstr(y, x, f" {item:<{col_w - 2}}", min(col_w, w - x), st)
+
+            stdscr.refresh()
+            k = stdscr.getch()
+            if k == ord("q") or k == 27:
+                sel[:] = orig
+                apply_current()
+                return
+            elif k == curses.KEY_RIGHT:
+                col = min(col + 1, len(columns) - 1)
+            elif k == curses.KEY_LEFT:
+                col = max(col - 1, 0)
+            elif k == curses.KEY_DOWN:
+                sel[col] = min(sel[col] + 1, len(columns[col][1]) - 1)
+            elif k == curses.KEY_UP:
+                sel[col] = max(sel[col] - 1, 0)
+            elif k in (curses.KEY_ENTER, 10, 13):
+                return
+
+    curses.wrapper(run)
+    t = val(0, sel[0]) or all_themes[0]
+    sh = val(1, sel[1])
+    tx = val(2, sel[2])
+    an = val(3, sel[3])
+    parts = [f"theme={t}"]
+    if sh: parts.append(f"shape={sh}")
+    if tx: parts.append(f"texture={tx}")
+    if an: parts.append(f"anim={an}")
+    print(f"Applied: {', '.join(parts)}")
+
+
 def main():
     args = sys.argv[1:]
     if args and args[0] == "starship":
@@ -1180,6 +1362,12 @@ def main():
         gen_starship(json.load(open(path))["roles"])
         print(f"starship -> {cur}")
         return
+    if args and args[0] == "shape":
+        shape_cmd(args[1:]); return
+    if args and args[0] == "texture":
+        texture_cmd(args[1:]); return
+    if args and args[0] == "anim":
+        anim_cmd(args[1:]); return
     if args and args[0] == "effects":
         effects_cmd(args[1:]); return
     if args and args[0] == "homepage":
@@ -1189,10 +1377,7 @@ def main():
     if args and args[0] in ("-l", "--list"):
         print("\n".join(themes())); return
     if not args:
-        cur = active()
-        for t in themes():
-            print(f"  {'* ' if t == cur else '  '}{t}")
-        return
+        tui(); return
     apply(args[0])
 
 
