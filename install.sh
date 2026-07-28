@@ -3,6 +3,14 @@
 # generators into ~/.local/bin. Re-runnable.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ -z "${BASH_SOURCE[0]}" ] || [ ! -f "${BASH_SOURCE[0]}" ]; then
+    printf 'Downloading themes...\n'
+    _tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$_tmpdir"' EXIT
+    git clone --depth 1 https://github.com/grapes7000/themes.git "$_tmpdir/themes"
+    exec bash "$_tmpdir/themes/install.sh" "$@"
+fi
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 mkdir -p "$CFG/hypr/themes" "$CFG/hypr/wallpapers" "$CFG/hypr/generated" "$HOME/.local/bin"
