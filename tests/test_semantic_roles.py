@@ -121,12 +121,43 @@ class TestResolveSemanticRoles:
     def test_on_accent_has_good_contrast(self, minimal_roles):
         resolved = theme.resolve_semantic_roles(minimal_roles)
         ratio = theme.contrast_ratio(resolved["accent"], resolved["on_accent"])
+        # best_contrast picks the highest-contrast candidate from [bg, text];
+        # 2.0 is a floor sanity check, not a WCAG guarantee — the actual ratio
+        # depends on theme palette and may exceed WCAG AA (4.5) for most themes.
         assert ratio > 2.0
 
     def test_on_urgent_has_good_contrast(self, minimal_roles):
         resolved = theme.resolve_semantic_roles(minimal_roles)
         ratio = theme.contrast_ratio(resolved["urgent"], resolved["on_urgent"])
         assert ratio > 2.0
+
+    def test_does_not_mutate_input(self, minimal_roles):
+        snapshot = dict(minimal_roles)
+        theme.resolve_semantic_roles(minimal_roles)
+        assert minimal_roles == snapshot
+
+    def test_success_fallback_without_ansi_green(self, minimal_roles):
+        del minimal_roles["ansi_green"]
+        resolved = theme.resolve_semantic_roles(minimal_roles)
+        assert resolved["success"] == minimal_roles["accent2"]
+
+    def test_warning_fallback_without_ansi_yellow(self, minimal_roles):
+        del minimal_roles["ansi_yellow"]
+        resolved = theme.resolve_semantic_roles(minimal_roles)
+        assert resolved["warning"] == minimal_roles["accent2"]
+
+    def test_info_fallback_without_ansi_blue(self, minimal_roles):
+        del minimal_roles["ansi_blue"]
+        resolved = theme.resolve_semantic_roles(minimal_roles)
+        assert resolved["info"] == minimal_roles["accent2"]
+
+    def test_fallbacks_with_no_ansi_status_colors(self, minimal_roles):
+        for k in ("ansi_green", "ansi_yellow", "ansi_blue"):
+            del minimal_roles[k]
+        resolved = theme.resolve_semantic_roles(minimal_roles)
+        for role in ("success", "warning", "info"):
+            assert role in resolved
+            assert resolved[role] == minimal_roles["accent2"]
 
 
 # ── Backward compatibility: all 36 themes ───────────────────────────
