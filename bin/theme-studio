@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Installed `theme` command: Theme Studio UI plus backward-compatible CLI."""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+import theme_runtime
+from theme_schema import validation_summary, validate_theme
+
+
+def usage() -> str:
+    return """theme — desktop theme studio
+
+Interactive:
+  theme                     Open Theme Studio
+  theme studio              Open Theme Studio
+  theme edit [name]         Open a theme in Theme Studio
+
+Compatible commands:
+  theme <name>              Apply a theme and Studio component overrides
+  theme --list              List themes
+  theme shape ...           Existing shape commands
+  theme texture ...         Existing texture commands
+  theme anim ...            Existing animation commands
+  theme homepage ...        Existing homepage commands
+  theme font ...            Existing font commands
+
+Studio utilities:
+  theme validate [name]     Validate a theme
+  theme recover             Open Theme Studio recovery flow
+  theme legacy ...          Run the previous command directly
+"""
+
+
+def run_legacy(args: list[str]) -> int:
+    command = theme_runtime.legacy_command()
+    if not command:
+        print("theme: legacy generator was not found. Re-run the themes installer.", file=sys.stderr)
+        return 127
+    return subprocess.call(command + args)
+
+
+def launch(name: str | None = None) -> int:
+    if name:
+        os.environ["THEME_STUDIO_THEME"] = name
+    try:
+        from theme_tui import launch as launch_tui
+        launch_tui()
+        return 0
+    except KeyboardInterrupt:
+        return 130
+    except Exception as exc:
+        print(f"theme: Theme Studio could not start: {exc}", file=sys.stderr)
+        print("Falling back to the classic picker.", file=sys.stderr)
+        return run_legacy([])
+
+
+def validate(name: str | None) -> int:
+    target = name or theme_runtime.active_theme()
+    if not target:
+        print("theme validate: no active theme", file=sys.stderr)
+        return 2
+    try:
+        theme = theme_runtime.load_theme(target)
+    except Exception as exc:
+        print(f"theme validate: {exc}", file=sys.stderr)
+        return 2
+    issues = validate_theme(theme)
+    errors, warnings = validation_summary(issues)
+    print(f"{target}: {errors} error(s), {warnings} suggestion(s)")
+    for issue in issues:
+        icon = "✗" if issue["level"] == "error" else "!"
+        print(f"{icon} {issue['path']}: {issue['message']}")
+    return 1 if errors else 0
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if not args:
+        return launch()
+    if args[0] in ("-h", "--help", "help"):
+        print(usage())
+        return 0
+    if args[0] in ("studio", "recover"):
+        return launch()
+    if args[0] == "edit":
+        return launch(args[1] if len(args) > 1 else theme_runtime.active_theme())
+    if args[0] == "validate":
+        return validate(args[1] if len(args) > 1 else None)
+    if args[0] == "legacy":
+        return run_legacy(args[1:])
+
+    # Commands that are not theme names retain the existing CLI exactly.
+    passthrough = {"shape", "texture", "anim", "effects", "homepage", "font", "starship", "-l", "--list"}
+    if args[0] in passthrough or args[0].startswith("-"):
+        code = run_legacy(args)
+        if code == 0 and args[0] in {"shape", "texture", "anim", "effects", "homepage", "font"}:
+            current = theme_runtime.active_theme()
+            if current:
+                try:
+                    theme_runtime.apply_studio_overrides(current)
+                except Exception as exc:
+                    print(f"theme: Studio override warning: {exc}", file=sys.stderr)
+        return code
+
+    # Applying a named theme runs the stable generator first, then layers the
+    # new component model on top so old themes and new Studio themes both work.
+    try:
+        result = theme_runtime.apply_theme(args[0])
+    except Exception as exc:
+        print(f"theme: {exc}", file=sys.stderr)
+        return 1
+    if result.get("legacy_message"):
+        print(result["legacy_message"])
+    print(f"Theme Studio overrides applied: {args[0]}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

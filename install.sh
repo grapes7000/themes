@@ -8,12 +8,27 @@ CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
 mkdir -p "$CFG/hypr/themes" "$CFG/hypr/wallpapers" "$CFG/hypr/generated" "$HOME/.local/bin"
 cp "$REPO"/themes/*.json         "$CFG/hypr/themes/"
 cp "$REPO"/wallpapers/*.png      "$CFG/hypr/wallpapers/" 2>/dev/null || true
-for t in theme theme-new theme-menu wallgen starship-config theme-pywalfox theme-stylus theme-from-image; do
+
+STUDIO_TMP="$(mktemp -d)"
+trap 'rm -rf "$STUDIO_TMP"' EXIT
+bash "$REPO/tools/unpack-theme-studio.sh" "$STUDIO_TMP" >/dev/null
+
+# Theme Studio is the user-facing `theme` command. The previous stable engine is
+# retained as `theme-legacy` and receives every existing non-Studio command.
+install -m755 "$REPO/bin/theme" "$HOME/.local/bin/theme-legacy"
+install -m755 "$REPO/bin/theme-studio" "$HOME/.local/bin/theme"
+for t in theme-new theme-menu wallgen starship-config theme-pywalfox theme-stylus theme-from-image; do
     install -m755 "$REPO/bin/$t" "$HOME/.local/bin/$t"
 done
-install -m644 "$REPO/bin/theme_starship.py" "$HOME/.local/bin/theme_starship.py"
-install -m644 "$REPO/bin/theme_effects.py" "$HOME/.local/bin/theme_effects.py"
-install -m644 "$REPO/bin/theme_homepage.py" "$HOME/.local/bin/theme_homepage.py"
+for module in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py; do
+    install -m644 "$REPO/bin/$module" "$HOME/.local/bin/$module"
+done
+for module in theme_schema.py theme_preview.py theme_waybar.py theme_components.py theme_tui_widgets.py theme_tui.py; do
+    install -m644 "$STUDIO_TMP/$module" "$HOME/.local/bin/$module"
+done
+mkdir -p "$HOME/.local/share/doc/theme-studio"
+install -m644 "$STUDIO_TMP/THEME-STUDIO.md" "$HOME/.local/share/doc/theme-studio/README.md"
+install -m644 "$STUDIO_TMP/Theme-Studio-TUI-Design-Plan.md" "$HOME/.local/share/doc/theme-studio/Design-Plan.md"
 
 has() { command -v "$1" >/dev/null 2>&1; }
 
@@ -192,17 +207,19 @@ if [ ! -f "$CFG/theme-engine/targets.conf" ]; then
     echo "Detected desktop: $de -- wrote $CFG/theme-engine/targets.conf (edit anytime)."
 fi
 
-echo "Installed $(ls "$REPO"/themes/*.json | wc -l) themes + generators."
+echo "Installed $(ls "$REPO"/themes/*.json | wc -l) themes + Theme Studio + generators."
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     echo "~/.local/bin is not currently on PATH. Add it through your shell config or Chezmoi-managed dotfiles:"
     echo '  export PATH="$HOME/.local/bin:$PATH"'
 fi
 echo "The installer does not edit ~/.zshrc or ~/.bashrc. Open a shell where ~/.local/bin is on PATH, then run:"
-echo "  Apply desktop theme:  theme <name>"
-echo "  Update Firefox:       theme-pywalfox <name>"
-echo "  Generate webpage CSS: theme-stylus <name> --open"
-echo "  Theme from image:     theme-from-image <image> --name <name> --apply"
+echo "  Open Theme Studio:     theme"
+echo "  Apply desktop theme:   theme <name>"
+echo "  Validate current:      theme validate"
+echo "  Update Firefox:        theme-pywalfox <name>"
+echo "  Generate webpage CSS:  theme-stylus <name> --open"
+echo "  Theme from image:      theme-from-image <image> --name <name> --apply"
 if ! has wal; then
     echo "Image themes need pywal16: pipx install 'pywal16[all]'"
 fi
-echo "wallgen needs python-pillow:  sudo pacman -S python-pillow"
+echo "Wallpaper palette extraction and wallgen need python-pillow: sudo pacman -S python-pillow"
