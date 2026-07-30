@@ -7,10 +7,16 @@ A quick, practical guide to using the theme system day-to-day.
 ## 1. Switch themes
 
 ```sh
-theme                 # list all themes (the active one is marked *)
+theme                 # open the live Theme Studio picker
 theme dracula         # switch instantly — reskins every enabled app + wallpaper
 theme --list          # bare list (for scripts)
 ```
+
+Inside Theme Studio, use arrows, Vim keys, Tab, or the mouse to explore. Changes
+preview immediately. Press **Enter** to keep the current setup, **q/Esc** to
+restore what you started with, and **?** for descriptions and help. Press
+**s** for the integrated Starship prompt editor or **a** to inspect every app
+integration, including missing dependencies and slower final-only targets.
 
 In Hyprland you can also press **Super+T** for a wofi picker, or run `theme-menu`.
 

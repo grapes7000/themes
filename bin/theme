@@ -1070,7 +1070,7 @@ def gen_xfce(r):
     write(path, cfg)
 
 
-def reload():
+def reload(targets=None):
     # zsh has no live-reload hook for its prompt (unlike kitty's SIGUSR1) --
     # a new terminal/tab or `exec zsh` is needed to pick up gen_zsh's output.
     env = dict(os.environ)
@@ -1103,7 +1103,7 @@ def reload():
     if theme_homepage.is_running():
         run("eww", "reload", "--config", theme_homepage.EWW_DIR)
     # --- host desktop-environment apply (only if those targets are enabled) ---
-    tg = load_targets()
+    tg = load_targets() if targets is None else targets
     if "kde" in tg:
         # re-applying the SAME scheme name won't refresh (Plasma caches by
         # name) — bounce off a stock scheme first to force a reload.
@@ -1176,7 +1176,7 @@ def reload():
         run("pywalfox", "update")           # push palette to Firefox chrome+pages
 
 
-def apply(name):
+def apply(name, announce=True, targets=None):
     path = os.path.join(THEME_DIR, name + ".json")
     if not os.path.exists(path):
         sys.exit(f"theme: unknown theme '{name}'. Try: theme --list")
@@ -1185,7 +1185,7 @@ def apply(name):
     if "shadow_color" in s and "shadow" not in r:
         r["shadow"] = s["shadow_color"]
     r = resolve_semantic_roles(r)
-    tg = load_targets()
+    tg = load_targets() if targets is None else targets
     shape_name = theme_effects.profile_shape()
     texture_name = theme_effects.profile_texture()
     anim_name = theme_effects.profile_anim()
@@ -1211,8 +1211,9 @@ def apply(name):
     if "vscode" in tg:    gen_vscode(r, dark)
     if "qt" in tg:        gen_qt(r, dark)
     write(ACTIVE_FILE, name + "\n")
-    reload()
-    print(f"theme -> {name}  ({', '.join(k for k in tg)} regenerated)")
+    reload(tg)
+    if announce:
+        print(f"theme -> {name}  ({', '.join(k for k in tg)} regenerated)")
 
 
 def font_cmd(args):
@@ -1338,8 +1339,11 @@ def homepage_cmd(args):
 def tui():
     """Interactive TUI for picking theme, shape, texture, and anim with live preview."""
     import curses
+    import threading
 
     all_themes = themes()
+    if not all_themes:
+        sys.exit(f"theme: no themes found in {THEME_DIR}")
     all_shapes = ["(none)"] + theme_effects.list_shapes()
     all_textures = ["(none)"] + theme_effects.list_textures()
     all_anims = ["(none)"] + theme_effects.list_anims()
@@ -1350,6 +1354,31 @@ def tui():
         ("TEXTURE", all_textures),
         ("ANIM", all_anims),
     ]
+    column_help = {
+        "THEME": "Color palette used by every enabled app, plus the wallpaper.",
+        "SHAPE": "Window corner geometry, border width, and spacing.",
+        "TEXTURE": "Transparency, blur, shadows, brightness, and inactive dimming.",
+        "ANIM": "Window, workspace, fade, and border motion.",
+    }
+    item_help = {
+        "(none)": "Use the selected theme's own built-in default.",
+        "sharp": "Square corners, narrow gaps, and a thin border.",
+        "rounded": "Balanced corners, gaps, and borders.",
+        "pillowy": "Large soft corners with generous spacing.",
+        "boxy": "Tighter spacing with a strong geometric border.",
+        "clear": "Opaque and crisp; blur and shadows are disabled.",
+        "frosted": "Translucent glass with strong blur and a soft shadow.",
+        "glaze": "Glossy, vibrant transparency with medium blur.",
+        "haze": "Muted glass, deep shadows, and stronger inactive dimming.",
+        "bloom": "Bright, colorful blur with a wide soft shadow.",
+        "none": "Disable desktop animations.",
+        "subtle": "Slow, restrained slides and fades.",
+        "smooth": "Balanced, fluid everyday motion.",
+        "snappy": "Fast motion with very short transitions.",
+        "bouncy": "Spring-like pop and workspace movement.",
+        "dramatic": "Long cinematic movement and rotating borders.",
+        "glitch": "Abrupt, high-energy pop and cut effects.",
+    }
 
     cur_theme = active() or all_themes[0]
     cur_shape = theme_effects.profile_shape()
@@ -1364,16 +1393,22 @@ def tui():
     ]
     orig = list(sel)
     col = 0
+    confirmed = False
 
     def val(c, i):
         v = columns[c][1][i]
         return None if v == "(none)" else v
 
-    def apply_current():
-        t = val(0, sel[0]) or all_themes[0]
-        sh = val(1, sel[1])
-        tx = val(2, sel[2])
-        an = val(3, sel[3])
+    def snapshot():
+        return (
+            val(0, sel[0]) or all_themes[0],
+            val(1, sel[1]),
+            val(2, sel[2]),
+            val(3, sel[3]),
+        )
+
+    def apply_snapshot(state, preview=True):
+        t, sh, tx, an = state
         if sh is not None:
             theme_effects.save_shape(sh)
         else:
@@ -1386,47 +1421,217 @@ def tui():
             theme_effects.save_anim(an)
         else:
             theme_effects.save_anim(None)
-        apply(t)
+        targets = None
+        if preview:
+            # Some configured targets rebuild external themes, browser data, or
+            # whole vaults. Those belong to Confirm, not arrow-key previews.
+            heavyweight = {"oomox", "gtk", "xfce", "kde", "obsidian", "firefox"}
+            targets = {k: v for k, v in load_targets().items() if k not in heavyweight}
+        apply(t, announce=False, targets=targets)
+
+    # Applying a theme can take long enough for curses to buffer many keypresses.
+    # Keep only the newest requested preview so rapid navigation stays responsive
+    # and stale selections are never replayed one by one.
+    condition = threading.Condition()
+    pending = None
+    applying = None
+    finished = snapshot()
+    apply_error = None
+    stopping = False
+
+    def request_preview(state):
+        nonlocal pending
+        with condition:
+            pending = state
+            condition.notify()
+
+    def preview_worker():
+        nonlocal pending, applying, finished, apply_error
+        while True:
+            with condition:
+                condition.wait_for(lambda: pending is not None or stopping)
+                if stopping and pending is None:
+                    return
+                state = pending
+                pending = None
+                applying = state
+            error = None
+            try:
+                apply_snapshot(state)
+            except BaseException as exc:
+                error = str(exc) or type(exc).__name__
+            with condition:
+                applying = None
+                finished = state
+                apply_error = error
+                condition.notify_all()
+
+    worker = threading.Thread(target=preview_worker, name="theme-preview", daemon=True)
+    worker.start()
+
+    def finish_on(state):
+        """Apply the final state, discarding any superseded preview."""
+        request_preview(state)
+        with condition:
+            condition.wait_for(
+                lambda: applying is None and pending is None and finished == state
+            )
+
+    def info_screen(stdscr, title, lines):
+        """Scrollable modal used for help and app/integration diagnostics."""
+        import curses
+        offset = 0
+        while True:
+            stdscr.erase()
+            height, width = stdscr.getmaxyx()
+            stdscr.addnstr(0, 0, f" {title}", max(1, width - 1),
+                           curses.A_BOLD | curses.color_pair(4))
+            stdscr.addnstr(1, 0, " ↑↓ scroll  q/Esc return", max(1, width - 1))
+            visible = max(1, height - 3)
+            offset = min(offset, max(0, len(lines) - visible))
+            for index, line in enumerate(lines[offset:offset + visible]):
+                stdscr.addnstr(3 + index, 1, line, max(1, width - 2))
+            stdscr.refresh()
+            key = stdscr.getch()
+            if key in (ord("q"), 27, ord("?"), 10, 13):
+                return
+            if key in (curses.KEY_DOWN, ord("j")):
+                offset = min(offset + 1, max(0, len(lines) - visible))
+            elif key in (curses.KEY_UP, ord("k")):
+                offset = max(0, offset - 1)
+            elif key == curses.KEY_NPAGE:
+                offset = min(offset + visible, max(0, len(lines) - visible))
+            elif key == curses.KEY_PPAGE:
+                offset = max(0, offset - visible)
+
+    def apps_lines():
+        enabled = load_targets()
+        heavyweight = {"oomox", "gtk", "xfce", "kde", "obsidian", "firefox"}
+        probes = {
+            "hypr": "hyprctl", "waybar": "waybar", "kitty": "kitty",
+            "starship": "starship", "zsh": "zsh", "nvim": "nvim",
+            "wallpaper": "hyprpaper", "wofi": "wofi", "rofi": "rofi",
+            "dunst": "dunstctl", "hyprlock": "hyprlock", "homepage": "eww",
+            "firefox": "firefox", "kde": "plasma-apply-colorscheme",
+            "oomox": "oomox-cli", "xfce": "xfconf-query",
+            "alacritty": "alacritty", "vscode": "code",
+        }
+        descriptions = {
+            "hypr": "Hyprland borders, gaps, blur, and motion",
+            "waybar": "Waybar colors and surface styling",
+            "kitty": "Kitty palette and opacity",
+            "starship": "Shell prompt palette and layout",
+            "zsh": "Generated Zsh prompt integration",
+            "nvim": "Neovim colors and semantic highlights",
+            "wallpaper": "Hyprpaper wallpaper selection",
+            "wofi": "Wofi launcher colors", "rofi": "Rofi launcher colors",
+            "dunst": "Notification colors", "hyprlock": "Lock-screen colors",
+            "homepage": "Desktop homepage overlay", "obsidian": "Obsidian vault CSS",
+            "firefox": "Firefox/pywalfox palette", "kde": "KDE color scheme",
+            "oomox": "GTK and icon theme build", "gtk": "GTK color overrides",
+            "xfce": "XFCE terminal and desktop settings",
+            "alacritty": "Alacritty terminal palette",
+            "vscode": "VS Code workbench theme", "qt": "Qt palette",
+        }
+        ordered = list(dict.fromkeys(CORE_TARGETS + list(descriptions)))
+        lines = [
+            "This is what Confirm will modify. Enable or disable targets in:",
+            f"  {TARGETS_FILE}",
+            "FAST previews while browsing; FINAL targets run once after Enter.",
+            "",
+        ]
+        for target in ordered:
+            on = target in enabled
+            probe = probes.get(target)
+            detected = ("built-in" if not probe
+                        else "found" if shutil.which(probe) else "missing")
+            phase = "FINAL" if target in heavyweight else "FAST "
+            lines.append(
+                f"{'ON ' if on else 'off'}  {detected:<8}  {phase}  "
+                f"{target:<10} {descriptions.get(target, 'Configured integration')}"
+            )
+        return lines
+
+    def open_starship_editor(stdscr):
+        import importlib.machinery
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "starship-config")
+        if not os.path.exists(path):
+            info_screen(stdscr, "STARSHIP EDITOR UNAVAILABLE", [
+                f"Missing: {path}",
+                "Re-run install.sh so the Theme Studio and its tools are synchronized.",
+            ])
+            return
+        loader = importlib.machinery.SourceFileLoader("theme_starship_config_tui", path)
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        result = module.run(stdscr, embedded=True)
+        if result == "saved":
+            request_preview(snapshot())
 
     def run(stdscr):
-        nonlocal col
-        curses.curs_set(0)
+        nonlocal col, confirmed
+        try:
+            curses.curs_set(0)
+        except curses.error:
+            pass  # Some valid terminals do not support cursor visibility.
         curses.start_color()
         curses.use_default_colors()
         curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)
         curses.init_pair(2, curses.COLOR_CYAN, -1)
         curses.init_pair(3, curses.COLOR_GREEN, -1)
         curses.init_pair(4, curses.COLOR_YELLOW, -1)
+        try:
+            curses.mousemask(curses.ALL_MOUSE_EVENTS)
+        except curses.error:
+            pass
 
-        last_applied = None
-
+        last_requested = snapshot()
         while True:
             stdscr.erase()
             h, w = stdscr.getmaxyx()
             col_w = max(20, w // 4)
+            if h < 12 or w < 40:
+                stdscr.addnstr(0, 0, "Theme Studio needs at least 40×12. Resize, or q to cancel.",
+                              max(1, w - 1), curses.A_BOLD)
+                stdscr.refresh()
+                if stdscr.getch() in (ord("q"), 27):
+                    sel[:] = orig
+                    finish_on(snapshot())
+                    return
+                continue
 
-            stdscr.addnstr(0, 0, " THEME PICKER — ←→ columns  ↑↓ select  Enter confirm  q cancel",
+            with condition:
+                busy = applying is not None or pending is not None
+                error = apply_error
+            status = "applying latest…" if busy else (f"apply failed: {error}" if error else "live")
+            stdscr.addnstr(0, 0, f" [{status}] DESKTOP THEME STUDIO",
                           w - 1, curses.A_BOLD | curses.color_pair(4))
+            stdscr.addnstr(
+                1, 0,
+                " Explore: arrows/click  Enter keep  q undo  s Starship  a Apps  ? Help",
+                w - 1,
+            )
 
-            current_key = tuple(sel)
-            if current_key != last_applied:
-                last_applied = current_key
-                try:
-                    apply_current()
-                except Exception:
-                    pass
+            current = snapshot()
+            if current != last_requested:
+                last_requested = current
+                request_preview(current)
 
+            offsets = []
             for ci, (label, items) in enumerate(columns):
                 x = ci * col_w
                 style = curses.A_BOLD | curses.color_pair(2) if ci == col else curses.A_BOLD
                 if x < w:
-                    stdscr.addnstr(2, x, label, min(col_w, w - x), style)
+                    stdscr.addnstr(3, x, label, min(col_w, w - x), style)
 
-                max_rows = h - 4
+                max_rows = max(1, h - 10)
                 offset = max(0, sel[ci] - max_rows // 2)
+                offsets.append(offset)
                 for row_i, idx in enumerate(range(offset, min(len(items), offset + max_rows))):
-                    y = 3 + row_i
-                    if y >= h:
+                    y = 4 + row_i
+                    if y >= h - 5:
                         break
                     item = items[idx]
                     if ci == col and idx == sel[ci]:
@@ -1436,26 +1641,84 @@ def tui():
                     else:
                         st = 0
                     if x < w:
-                        stdscr.addnstr(y, x, f" {item:<{col_w - 2}}", min(col_w, w - x), st)
+                            stdscr.addnstr(y, x, f" {item:<{col_w - 2}}", min(col_w, w - x), st)
 
+            label, items = columns[col]
+            selected = items[sel[col]]
+            detail = item_help.get(selected)
+            if label == "THEME":
+                detail = "Choose this palette; its JSON also supplies defaults for the other columns."
+            stdscr.addnstr(h - 4, 0, f" {label}: {column_help[label]}", w - 1, curses.A_BOLD)
+            stdscr.addnstr(h - 3, 0, f" Selected '{selected}': {detail}", w - 1)
+            stdscr.addnstr(
+                h - 2, 0,
+                " Changes preview immediately. Enter keeps them; q/Esc restores theme + effects.",
+                w - 1,
+            )
             stdscr.refresh()
             k = stdscr.getch()
-            if k == ord("q") or k == 27:
+            if k == ord("?"):
+                info_screen(stdscr, "HELP", [
+                    "Theme Studio coordinates one palette across the apps enabled in targets.conf.",
+                    "THEME changes colors. SHAPE, TEXTURE, and ANIM are optional overrides.",
+                    "'(none)' removes an override and returns control to the theme's defaults.",
+                    "",
+                    "↑↓ or j/k select an item. ←→, h/l, or Tab changes category.",
+                    "Click any visible item to select it. Home/End jump through a list.",
+                    "s opens the integrated Starship prompt editor.",
+                    "Starship's s Save is independent; returning here does not undo that saved profile.",
+                    "a shows enabled, missing, fast-preview, and final-only app integrations.",
+                    "Enter keeps the preview. q or Esc restores theme/effects from launch.",
+                ])
+            elif k == ord("a"):
+                info_screen(stdscr, "APPS & INTEGRATIONS", apps_lines())
+            elif k == ord("s"):
+                open_starship_editor(stdscr)
+            elif k == ord("q") or k == 27:
                 sel[:] = orig
-                apply_current()
+                finish_on(snapshot())
+                curses.flushinp()
                 return
-            elif k == curses.KEY_RIGHT:
+            elif k in (curses.KEY_RIGHT, ord("l"), 9):
                 col = min(col + 1, len(columns) - 1)
-            elif k == curses.KEY_LEFT:
+            elif k in (curses.KEY_LEFT, ord("h"), curses.KEY_BTAB):
                 col = max(col - 1, 0)
-            elif k == curses.KEY_DOWN:
+            elif k in (curses.KEY_DOWN, ord("j")):
                 sel[col] = min(sel[col] + 1, len(columns[col][1]) - 1)
-            elif k == curses.KEY_UP:
+            elif k in (curses.KEY_UP, ord("k")):
                 sel[col] = max(sel[col] - 1, 0)
+            elif k == curses.KEY_HOME:
+                sel[col] = 0
+            elif k == curses.KEY_END:
+                sel[col] = len(columns[col][1]) - 1
+            elif k == curses.KEY_MOUSE:
+                try:
+                    _, mouse_x, mouse_y, _, button = curses.getmouse()
+                    clicked_col = min(mouse_x // col_w, len(columns) - 1)
+                    if button & (curses.BUTTON1_CLICKED | curses.BUTTON1_PRESSED):
+                        col = clicked_col
+                        clicked_row = mouse_y - 4
+                        if 0 <= clicked_row < max(1, h - 10):
+                            idx = offsets[col] + clicked_row
+                            if idx < len(columns[col][1]):
+                                sel[col] = idx
+                except curses.error:
+                    pass
             elif k in (curses.KEY_ENTER, 10, 13):
+                finish_on(snapshot())
+                curses.flushinp()
+                confirmed = True
                 return
 
-    curses.wrapper(run)
+    try:
+        curses.wrapper(run)
+    finally:
+        with condition:
+            stopping = True
+            condition.notify_all()
+        worker.join()
+    if apply_error:
+        sys.exit(f"theme: could not apply selection: {apply_error}")
     t = val(0, sel[0]) or all_themes[0]
     sh = val(1, sel[1])
     tx = val(2, sel[2])
@@ -1464,7 +1727,20 @@ def tui():
     if sh: parts.append(f"shape={sh}")
     if tx: parts.append(f"texture={tx}")
     if an: parts.append(f"anim={an}")
-    print(f"Applied: {', '.join(parts)}")
+    action = "Applied" if confirmed else "Cancelled; restored"
+    if confirmed:
+        # The live preview intentionally skips heavyweight integrations.
+        # Complete those once, after the user commits to a selection.
+        configured_heavy = {"oomox", "gtk", "xfce", "kde", "obsidian", "firefox"} & set(load_targets())
+        if configured_heavy:
+            print(f"Finalizing slower integrations: {', '.join(sorted(configured_heavy))}…",
+                  flush=True)
+        try:
+            apply_snapshot(snapshot(), preview=False)
+        except BaseException as exc:
+            error = str(exc) or type(exc).__name__
+            sys.exit(f"theme: preview succeeded, but final apply failed: {error}")
+    print(f"{action}: {', '.join(parts)}")
 
 
 def main():

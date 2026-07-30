@@ -46,6 +46,16 @@ cd ~/themes
 ./install.sh          # copies themes/ + wallpapers/ into ~/.config/hypr, bin/ into ~/.local/bin
 theme catppuccin_mocha
 ```
+
+To install normally and also build a portable AppImage:
+
+```sh
+./install.sh --build-appimage
+```
+
+This uses `appimagetool` and writes the result to `dist/`. For packaging checks
+without `appimagetool`, run
+`packaging/build-appimage.sh --appdir-only --output /tmp/theme-package`.
 `install.sh` detects your desktop (Hyprland / KDE / XFCE / GNOME-family) and
 writes a matching `~/.config/theme-engine/targets.conf` the first time it
 runs, enabling only the targets whose apps it actually finds on `PATH`. It
@@ -66,11 +76,11 @@ Make sure `~/.local/bin` is on your PATH (`fish_add_path -g ~/.local/bin` for fi
 
 | Command | Description |
 |---|---|
-| `theme` | List all themes (marks the active one with `*`) |
+| `theme` | Open the live Theme Studio picker |
 | `theme <name>` | Switch theme — regenerate everything + live reload |
 | `theme starship` | Regenerate only Starship for the active theme |
 | `theme --list` | Bare list of names (for scripting) |
-| `starship-config` | Open the shared Starship prompt dashboard |
+| `starship-config` | Open the Starship editor directly (`s` inside Theme Studio) |
 | `theme-new <name>` | Create a new theme, scaffolded from `catppuccin_mocha` |
 | `theme-new <name> --from <base>` | …scaffold from a different theme |
 | `theme-new <name> --edit` | …and open it in `$EDITOR` |
@@ -134,10 +144,10 @@ The branch and compact Git-status details appear only inside a Git repository;
 a clean repository retains its connected branch segment without status symbols.
 Outside a repository, the path segment closes with its own arrow. Long-running
 commands and background jobs also show compact Nerd Font indicators when active.
-Run `starship-config` to edit the shared prompt layout, path, Git, marker, and
-conditional-indicator settings. It saves one profile at
+Press `s` in Theme Studio (or run `starship-config` directly) to edit the shared
+prompt layout, path, Git, marker, and conditional-indicator settings. It saves one profile at
 `~/.config/theme-engine/starship.json`; every theme uses that profile with its
-own palette. The dashboard’s Save action regenerates only the active Starship
+own palette. The editor’s Save action regenerates only the active Starship
 configuration. Hand-authored Starship configurations remain untouched.
 
 ---

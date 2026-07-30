@@ -36,6 +36,11 @@ jobs:
           test -x bin/theme-pywalfox
           test -x bin/theme-stylus
           test -x bin/theme-from-image
+          test -x packaging/AppRun
+          test -x packaging/build-appimage.sh
 
       - name: Run test suite
         run: pytest -q
+
+      - name: Validate AppImage layout
+        run: packaging/build-appimage.sh --appdir-only --output "$RUNNER_TEMP/theme-package"

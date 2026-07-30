@@ -130,11 +130,19 @@ def preview_lines(values):
     return left, right, second
 
 
-def draw(stdscr, values, section, row, notice):
+def draw(stdscr, values, section, row, notice, embedded=False):
     stdscr.erase()
     height, width = stdscr.getmaxyx()
-    stdscr.addstr(0, 0, clip_cells("Starship v2 prompt dashboard", width - 1), curses.A_BOLD)
-    stdscr.addstr(1, 0, clip_cells("Arrows: move  Enter: choose/toggle  e: custom value  s: save  q: cancel", width - 1))
+    if height < 12 or width < 48:
+        stdscr.addstr(0, 0, clip_cells("Starship Editor needs at least 48×12. Resize, or q to go back.", width - 1),
+                      curses.A_BOLD)
+        stdscr.refresh()
+        return
+    stdscr.addstr(0, 0, clip_cells("STARSHIP PROMPT EDITOR", width - 1), curses.A_BOLD)
+    back = "back without saving" if embedded else "quit without saving"
+    stdscr.addstr(1, 0, clip_cells(
+        f"←→ sections  ↑↓ setting  Enter toggle/cycle  e edit  r reset section  s save  q {back}",
+        width - 1))
     name, keys = SECTIONS[section]
     for index, (title, _) in enumerate(SECTIONS):
         if 3 + index >= height - 1:
@@ -158,29 +166,41 @@ def draw(stdscr, values, section, row, notice):
         left, right, marker = preview_lines(values)
         right_width = cell_width(right)
         left_width = max(0, width - right_width - 5) if right else width - 1
-        stdscr.addstr(height - 7, 0, clip_cells("LIVE V2 PREVIEW (left prompt and right indicators)", width - 1), curses.A_BOLD)
+        stdscr.addstr(height - 7, 0, clip_cells("PROMPT PREVIEW (layout sample; your theme supplies the colors)", width - 1), curses.A_BOLD)
         stdscr.addstr(height - 6, 0, clip_cells(left, left_width))
         if right and right_width < width:
-            stdscr.addstr(height - 6, width - right_width - 1, right)
+            stdscr.addnstr(height - 6, width - right_width - 1, right, right_width)
         stdscr.addstr(height - 5, 0, clip_cells(marker, width - 1))
         stdscr.addstr(height - 3, 0, clip_cells(f"Shared profile: {PROFILE_PATH}", width - 1))
+    selected = keys[row]
+    kind = ("On/off setting." if isinstance(values[selected], bool)
+            else "Press Enter for presets or e to type a custom value.")
+    stdscr.addstr(height - 2, 0, clip_cells(f"{LABELS[selected]} — {kind}", width - 1), curses.A_BOLD)
     stdscr.addstr(height - 1, 0, clip_cells(notice, width - 1))
     stdscr.refresh()
 
 
-def run(stdscr):
-    curses.curs_set(0)
+def run(stdscr, embedded=False):
+    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass
     values = profile()
     if values["prompt_style"] not in PRESETS:
         values["prompt_style"] = "Powerlevel10k workspace"
     section = row = 0
     notice = "V2 layout is shared across themes; each active theme supplies its own palette."
     while True:
-        draw(stdscr, values, section, row, notice)
+        draw(stdscr, values, section, row, notice, embedded)
         key = stdscr.getch()
+        height, width = stdscr.getmaxyx()
+        if height < 12 or width < 48:
+            if key in (ord("q"), 27):
+                return "cancelled" if embedded else 0
+            continue
         name, keys = SECTIONS[section]
         if key in (ord("q"), 27):
-            return 0
+            return "cancelled" if embedded else 0
         if key in (curses.KEY_LEFT, ord("h")):
             section = (section - 1) % len(SECTIONS); row = 0
         elif key in (curses.KEY_RIGHT, ord("l")):
@@ -213,6 +233,8 @@ def run(stdscr):
             notice = "Powerlevel10k workspace restored."
         elif key == ord("s"):
             save(values)
+            if embedded:
+                return "saved"
             command = os.path.join(os.path.dirname(os.path.abspath(__file__)), "theme")
             result = subprocess.run([command, "starship"], text=True, capture_output=True)
             return result.returncode

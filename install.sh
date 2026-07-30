@@ -15,11 +15,22 @@ fi
 
 REPO="$(cd "$(dirname "$_src")" && pwd)"
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
+BUILD_APPIMAGE=0
+
+for arg in "$@"; do
+    case "$arg" in
+        --build-appimage) BUILD_APPIMAGE=1 ;;
+        -h|--help)
+            echo "Usage: ./install.sh [--build-appimage]"
+            echo "Installs Theme Engine. --build-appimage also creates a portable AppImage."
+            exit 0 ;;
+        *) echo "Unknown option: $arg" >&2; exit 2 ;;
+    esac
+done
 
 mkdir -p "$CFG/hypr/themes" "$CFG/hypr/wallpapers" "$CFG/hypr/generated" "$HOME/.local/bin"
 cp "$REPO"/themes/*.json         "$CFG/hypr/themes/"
 cp "$REPO"/wallpapers/*.png      "$CFG/hypr/wallpapers/" 2>/dev/null || true
-
 STUDIO_TMP="$(mktemp -d)"
 trap 'rm -rf "$STUDIO_TMP"' EXIT
 bash "$REPO/tools/unpack-theme-studio.sh" "$STUDIO_TMP" >/dev/null
@@ -28,7 +39,7 @@ bash "$REPO/tools/unpack-theme-studio.sh" "$STUDIO_TMP" >/dev/null
 # retained as `theme-legacy` and receives every existing non-Studio command.
 install -m755 "$REPO/bin/theme" "$HOME/.local/bin/theme-legacy"
 install -m755 "$REPO/bin/theme-studio" "$HOME/.local/bin/theme"
-for t in theme-new theme-menu wallgen starship-config theme-pywalfox theme-stylus theme-from-image; do
+for t in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image; do
     install -m755 "$REPO/bin/$t" "$HOME/.local/bin/$t"
 done
 for module in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py; do
@@ -233,4 +244,11 @@ echo "  Theme from image:      theme-from-image <image> --name <name> --apply"
 if ! has wal; then
     echo "Image themes need pywal16: pipx install 'pywal16[all]'"
 fi
-echo "Wallpaper palette extraction and wallgen need python-pillow: sudo pacman -S python-pillow"
+echo "wallgen needs python-pillow:  sudo pacman -S python-pillow"
+if [ "$BUILD_APPIMAGE" -eq 1 ]; then
+    echo
+    echo "Building AppImage..."
+    "$REPO/packaging/build-appimage.sh"
+else
+    echo "Optional portable build: ./install.sh --build-appimage"
+fi
