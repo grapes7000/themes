@@ -2,7 +2,18 @@
 # Install the theme engine: themes + wallpapers into ~/.config/hypr,
 # generators into ~/.local/bin. Re-runnable.
 set -euo pipefail
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+_src="${BASH_SOURCE[0]-}"
+if [ -z "$_src" ] || [ ! -f "$_src" ]; then
+    printf 'Downloading themes...\n'
+    _tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$_tmpdir"' EXIT
+    git clone --depth 1 https://github.com/grapes7000/themes.git "$_tmpdir/themes"
+    bash "$_tmpdir/themes/install.sh" "$@"
+    exit $?
+fi
+
+REPO="$(cd "$(dirname "$_src")" && pwd)"
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 mkdir -p "$CFG/hypr/themes" "$CFG/hypr/wallpapers" "$CFG/hypr/generated" "$HOME/.local/bin"
