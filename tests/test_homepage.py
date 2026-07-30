@@ -82,6 +82,7 @@ def test_workspace_is_dynamic_and_clickable():
     assert "workspace-state" in yuck
     assert "'.active'" in yuck
     assert "switch-workspace.py" in yuck
+    assert "switch-workspace.py ${ws}" in yuck
     assert "ws == 1" not in yuck
 
 
@@ -311,6 +312,34 @@ def test_start_reports_daemon_stderr_when_launch_fails(monkeypatch):
     monkeypatch.setattr(theme_homepage.subprocess, "Popen", FakePopen)
     message = theme_homepage.start()
     assert "daemon boom" in message
+
+
+def test_start_reports_daemon_stderr_when_daemon_never_becomes_ready(monkeypatch):
+    monkeypatch.setattr(theme_homepage, "is_running", lambda: False)
+    monkeypatch.setattr(theme_homepage, "dependency_report",
+                        lambda: {"eww": True, "python3": True, "hyprctl": True, "playerctl": True})
+    monkeypatch.setattr(theme_homepage.Path, "is_file", lambda self: True)
+    monkeypatch.setattr(theme_homepage, "_clean_pidfile", lambda: None)
+    monkeypatch.setattr(theme_homepage, "_clean_stale_socket", lambda: None)
+    monkeypatch.setattr(theme_homepage, "_wait_for_daemon", lambda env, timeout=3.0: False)
+
+    class FakePopen:
+        def __init__(self, *args, **kwargs):
+            self.pid = 9999
+            self.terminated = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+        def communicate(self, timeout=None):
+            return b"", b"unable to connect to Wayland display"
+
+    monkeypatch.setattr(theme_homepage.subprocess, "Popen", FakePopen)
+    message = theme_homepage.start()
+    assert "unable to connect to Wayland display" in message
 
 
 def test_start_requires_eww_and_python(monkeypatch):

@@ -311,7 +311,7 @@ def render_yuck(settings: dict, theme_name: str = "", effects_preset: str | None
   (box :class "card" :orientation "h" :space-evenly false
     (for ws in {{jq(workspace-state, '.workspaces')}}
       (button :class {{ws == jq(workspace-state, '.active') ? "workspace-btn workspace-active" : "workspace-btn"}}
-              :onclick "{scripts / 'switch-workspace.py'} {{ws}}"
+              :onclick "{scripts / 'switch-workspace.py'} ${{ws}}"
         ws))))
 
 (defwidget sysinfo-widget []
@@ -695,11 +695,15 @@ def start() -> str:
             start_new_session=True,
         )
         if not _wait_for_daemon(env):
-            if daemon.poll() is not None:
+            if daemon.poll() is None:
+                daemon.terminate()
+            try:
                 _, err = daemon.communicate(timeout=1)
-                return "eww daemon failed to start: " + ((err or b"").decode(errors="replace").strip()
-                                                        or "unknown error")
-            return "eww daemon did not become ready in time"
+            except subprocess.TimeoutExpired:
+                daemon.kill()
+                _, err = daemon.communicate(timeout=1)
+            detail = (err or b"").decode(errors="replace").strip()
+            return "eww daemon failed to become ready: " + (detail or "unknown error")
         opened = subprocess.run(
             ["eww", "open", "homepage", "--force-wayland", "--config", str(EWW_DIR)],
             env=env, check=False, capture_output=True, text=True, timeout=5,

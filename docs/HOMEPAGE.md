@@ -56,11 +56,15 @@ Stored at `~/.config/theme-engine/homepage.json`:
 
 ## Auto-Start
 
-Add to your `hyprland.conf`:
+Add the following beneath the desktop startup commands in Hyprland's
+`autostart.conf`:
 
 ```
-exec-once = theme homepage on
+exec-once = ~/.local/bin/theme homepage on
 ```
+
+The absolute path avoids relying on `~/.local/bin` being present in Hyprland's
+startup `PATH`.
 
 ## Enabling the Target
 
