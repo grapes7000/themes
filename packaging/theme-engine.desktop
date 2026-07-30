@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Theme Engine
+Comment=Preview and apply coordinated desktop themes
+Exec=theme-engine
+Icon=theme-engine
+Terminal=true
+Categories=Utility;Settings;
+Keywords=theme;desktop;colors;Hyprland;

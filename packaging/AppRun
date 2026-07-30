@@ -1,0 +1,41 @@
+#!/bin/sh
+set -eu
+
+APPDIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+CONFIG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}"
+THEME_ROOT="$CONFIG_ROOT/hypr/themes"
+WALLPAPER_ROOT="$CONFIG_ROOT/hypr/wallpapers"
+ENGINE_ROOT="$CONFIG_ROOT/theme-engine"
+
+mkdir -p "$THEME_ROOT" "$WALLPAPER_ROOT" "$ENGINE_ROOT"
+for source in "$APPDIR"/usr/share/theme-engine/themes/*.json; do
+    destination="$THEME_ROOT/$(basename "$source")"
+    [ -e "$destination" ] || cp "$source" "$destination"
+done
+for source in "$APPDIR"/usr/share/theme-engine/wallpapers/*.png; do
+    [ -e "$source" ] || continue
+    destination="$WALLPAPER_ROOT/$(basename "$source")"
+    [ -e "$destination" ] || cp "$source" "$destination"
+done
+
+if [ ! -e "$ENGINE_ROOT/targets.conf" ]; then
+    {
+        echo "# Created on first Theme Engine AppImage launch."
+        echo "# Only detected apps are enabled; edit this file at any time."
+        command -v hyprctl >/dev/null 2>&1 && echo hypr
+        command -v waybar >/dev/null 2>&1 && echo waybar
+        command -v kitty >/dev/null 2>&1 && echo kitty
+        command -v starship >/dev/null 2>&1 && echo starship
+        command -v nvim >/dev/null 2>&1 && echo nvim
+        command -v hyprpaper >/dev/null 2>&1 && echo wallpaper
+        command -v wofi >/dev/null 2>&1 && echo wofi
+        command -v rofi >/dev/null 2>&1 && echo rofi
+        command -v dunst >/dev/null 2>&1 && echo dunst
+        command -v hyprlock >/dev/null 2>&1 && echo hyprlock
+        command -v plasma-apply-colorscheme >/dev/null 2>&1 && echo kde
+    } > "$ENGINE_ROOT/targets.conf"
+fi
+
+export PYTHONHOME="$APPDIR/usr"
+export LD_LIBRARY_PATH="$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$APPDIR/usr/bin/python3" "$APPDIR/usr/lib/theme-engine/theme" "$@"
