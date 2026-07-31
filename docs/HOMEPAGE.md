@@ -1,7 +1,7 @@
 # Desktop Homepage Overlay
 
-A transparent desktop overlay showing clock, theme info, workspaces,
-system stats, and now-playing media. Powered by [Eww](https://github.com/elkowar/eww),
+A transparent desktop command center with clock, desktop modes, workspaces,
+system stats, media, agenda, privacy state, project context, and quick actions. Powered by [Eww](https://github.com/elkowar/eww),
 themed automatically from the engine's semantic color roles.
 
 ## Requirements
@@ -32,6 +32,9 @@ colors whenever you switch themes with `theme <name>`.
 | Workspaces | `hyprctl workspaces -j` | event-driven |
 | System summary | `/proc/stat`, `/proc/meminfo`, `df`, `/proc/uptime` | 5s |
 | Now Playing | `playerctl` (MPRIS) | 3s, hidden when idle |
+| Agenda | `~/.config/eww/dashboard/agenda.json` | 60s |
+| Network/privacy | `nmcli`, Mullvad, Tailscale when installed | 15s |
+| Active project | `~/.config/eww/dashboard/config.json` | 30s |
 
 ## How It Works
 
@@ -53,6 +56,20 @@ Stored at `~/.config/theme-engine/homepage.json`:
   "alignment": "left"
 }
 ```
+
+Optional dashboard configuration lives in `~/.config/eww/dashboard/`:
+
+```json
+// config.json
+{"project_name": "setup", "project_dir": "~/Projects/setup"}
+```
+
+```json
+// agenda.json
+[{"time": "09:30", "title": "Design review", "category": "work"}]
+```
+
+The Work, Chill, and Privacy selection persists in `~/.config/eww/dashboard/mode`.
 
 ## Auto-Start
 

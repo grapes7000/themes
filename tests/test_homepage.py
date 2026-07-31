@@ -160,12 +160,20 @@ def test_generated_yuck_has_balanced_delimiters():
 def test_helpers_are_python_and_json_safe():
     scripts = theme_homepage.render_scripts()
     assert set(scripts) == {
-        "sysinfo.py", "media.py", "media-control.py", "workspaces.py", "switch-workspace.py"
+        "sysinfo.py", "media.py", "media-control.py", "workspaces.py", "switch-workspace.py", "dashboard.py"
     }
     assert all(value.startswith("#!/usr/bin/env python3") for value in scripts.values())
     assert "json.dumps" in scripts["media.py"]
     assert "re.fullmatch" in scripts["switch-workspace.py"]
     assert "shell=True" not in "".join(scripts.values())
+
+
+def test_dashboard_helpers_cover_empty_optional_data():
+    script = theme_homepage.render_scripts()["dashboard.py"]
+    assert "agenda.json" in script
+    assert "config.json" in script
+    assert "mullvad" in script and "tailscale" in script
+    assert "shutil.which" in script
 
 
 def test_cpu_uses_delta_sample_and_numeric_percentages():
