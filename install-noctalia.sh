@@ -175,5 +175,5 @@ echo "Apply later:              theme <name>"
 echo "Undo this installation:  theme-install-undo"
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     echo
-echo "Fish PATH setup (one time): fish_add_path -g ~/.local/bin"
+    echo "Fish PATH setup (one time): fish_add_path -g ~/.local/bin"
 fi
