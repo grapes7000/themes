@@ -16,9 +16,11 @@ the generated Theme Engine palette.
 
 ## Install safely
 
+These commands work from Fish, Bash, and Zsh:
+
 ```bash
-./install-noctalia.sh --dry-run
-./install-noctalia.sh
+bash ./install-noctalia.sh --dry-run
+bash ./install-noctalia.sh
 ```
 
 The installer never installs packages and never edits shell startup files. It
@@ -39,7 +41,7 @@ theme y2k
 Theme Studio and the normal named-theme command both generate
 `~/.config/noctalia/palettes/theme-engine-active.json`, select it as Noctalia's
 custom palette, and apply the same source theme to the enabled deep-theme
-targets.
+targets. Waybar output is skipped when the `waybar` target is disabled.
 
 ## Undo
 
