@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Restore files changed by install-noctalia.sh from a recorded snapshot.
+set -euo pipefail
+
+STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+ROOT="$STATE_HOME/theme-engine/install-snapshots"
+SNAPSHOT=""
+DRY_RUN=0
+LIST=0
+
+usage() {
+    cat <<'EOF'
+Usage: theme-install-undo [--dry-run] [--snapshot ID]
+       theme-install-undo --list
+
+Without --snapshot, restores the latest non-undone installation snapshot.
+This reverses only installer file operations; it does not undo themes applied
+later with `theme <name>`.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry-run) DRY_RUN=1; shift ;;
+        --list) LIST=1; shift ;;
+        --snapshot)
+            [ $# -ge 2 ] || { echo "--snapshot requires an ID" >&2; exit 2; }
+            SNAPSHOT="$ROOT/$2"
+            shift 2
+            ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+if [ "$LIST" -eq 1 ]; then
+    if [ ! -d "$ROOT" ]; then
+        echo "No installation snapshots found."
+        exit 0
+    fi
+    for dir in "$ROOT"/20*; do
+        [ -d "$dir" ] || continue
+        status="ready"
+        [ -f "$dir/UNDONE" ] && status="undone"
+        printf '%s\t%s\n' "$(basename "$dir")" "$status"
+    done
+    exit 0
+fi
+
+if [ -z "$SNAPSHOT" ]; then
+    if [ -L "$ROOT/latest" ]; then
+        candidate="$(readlink -f "$ROOT/latest")"
+        [ -f "$candidate/UNDONE" ] || SNAPSHOT="$candidate"
+    fi
+fi
+
+if [ -z "$SNAPSHOT" ] && [ -d "$ROOT" ]; then
+    while IFS= read -r candidate; do
+        [ -f "$candidate/UNDONE" ] && continue
+        SNAPSHOT="$candidate"
+        break
+    done < <(find "$ROOT" -mindepth 1 -maxdepth 1 -type d -name '20*' -print | sort -r)
+fi
+
+if [ -z "$SNAPSHOT" ] || [ ! -f "$SNAPSHOT/manifest.tsv" ]; then
+    echo "No usable Theme Engine installation snapshot found." >&2
+    exit 1
+fi
+
+if [ -f "$SNAPSHOT/UNDONE" ]; then
+    echo "Snapshot $(basename "$SNAPSHOT") was already undone." >&2
+    exit 1
+fi
+
+run() {
+    if [ "$DRY_RUN" -eq 1 ]; then
+        printf '+ '
+        printf '%q ' "$@"
+        printf '\n'
+    else
+        "$@"
+    fi
+}
+
+mapfile -t rows < "$SNAPSHOT/manifest.tsv"
+for ((i=${#rows[@]}-1; i>=0; i--)); do
+    IFS=$'\t' read -r action path backup <<< "${rows[$i]}"
+    case "$action" in
+        restore)
+            if [ ! -e "$backup" ] && [ ! -L "$backup" ]; then
+                echo "Missing backup for $path: $backup" >&2
+                exit 1
+            fi
+            run rm -rf -- "$path"
+            run mkdir -p -- "$(dirname "$path")"
+            run cp -a -- "$backup" "$path"
+            ;;
+        remove)
+            run rm -rf -- "$path"
+            ;;
+        *)
+            echo "Invalid manifest action: $action" >&2
+            exit 1
+            ;;
+    esac
+done
+
+if [ "$DRY_RUN" -eq 1 ]; then
+    echo "Dry run complete; nothing was changed."
+else
+    date --iso-8601=seconds > "$SNAPSHOT/UNDONE"
+    echo "Restored installation snapshot: $(basename "$SNAPSHOT")"
+    echo "Your pre-install files are back in place."
+fi
