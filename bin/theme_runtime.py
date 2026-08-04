@@ -39,11 +39,22 @@ def legacy_command() -> list[str] | None:
     sibling = Path(__file__).resolve().with_name("theme-legacy")
     if sibling.exists():
         return [str(sibling)]
-    # Development checkout: original engine is named bin/theme while the studio
-    # entry point is bin/theme-studio.
     source = Path(__file__).resolve().with_name("theme")
     if source.exists() and source.name != Path(sys.argv[0]).name:
         return [str(source)]
+    return None
+
+
+def noctalia_command() -> list[str] | None:
+    explicit = os.environ.get("THEME_NOCTALIA_COMMAND")
+    if explicit:
+        return explicit.split()
+    found = shutil.which("theme-noctalia")
+    if found:
+        return [found]
+    sibling = Path(__file__).resolve().with_name("theme-noctalia")
+    if sibling.exists():
+        return [str(sibling)]
     return None
 
 
@@ -81,6 +92,15 @@ def _run_legacy(name: str) -> tuple[bool, str]:
     return proc.returncode == 0, message
 
 
+def _sync_noctalia(name: str) -> tuple[bool, str]:
+    command = noctalia_command()
+    if not command:
+        return False, ""
+    proc = subprocess.run(command + ["apply", name], text=True, capture_output=True)
+    message = (proc.stdout or proc.stderr or "").strip()
+    return proc.returncode == 0, message
+
+
 def apply_studio_overrides(name: str, *, restart_waybar: bool = False,
                            components: list[str] | None = None) -> dict[str, Any]:
     """Apply only Studio-managed component layers after a legacy subcommand."""
@@ -100,12 +120,15 @@ def apply_theme(name: str, *, restart_waybar: bool = False,
     legacy_ok, legacy_message = _run_legacy(name)
     component_result = apply_all(theme, components)
     waybar_paths = theme_waybar.apply(theme, restart=restart_waybar)
+    noctalia_ok, noctalia_message = _sync_noctalia(name)
     ACTIVE_FILE.parent.mkdir(parents=True, exist_ok=True)
     ACTIVE_FILE.write_text(name + "\n", encoding="utf-8")
     return {
         "name": name,
         "legacy_ok": legacy_ok,
         "legacy_message": legacy_message,
+        "noctalia_ok": noctalia_ok,
+        "noctalia_message": noctalia_message,
         "components": component_result,
         "waybar": {k: str(v) for k, v in waybar_paths.items()},
     }
