@@ -26,7 +26,7 @@
 Single source of truth: ~/.config/hypr/themes/<name>.json
 Everything under */generated/ is written by this script — never edit it by hand.
 """
-import json, os, sys, glob, subprocess, signal, shutil, time, re
+import json, os, sys, glob, subprocess, signal, shutil, time, re, tempfile
 from theme_starship import render as render_starship
 import theme_effects
 import theme_homepage
@@ -37,6 +37,7 @@ THEME_DIR = os.path.join(CFG, "hypr", "themes")
 ACTIVE_FILE = os.path.join(CFG, "hypr", "generated", ".active")
 TARGETS_FILE = os.path.join(CFG, "theme-engine", "targets.conf")
 FONT_FILE = os.path.join(CFG, "theme-engine", "font")
+THEME_CONTRACT_FILE = os.path.join(CFG, "theme-engine", "generated", "theme.json")
 
 # Generators that run by default when no targets.conf exists (back-compat).
 CORE_TARGETS = ["hypr", "waybar", "kitty", "starship", "nvim", "wallpaper"]
@@ -113,6 +114,44 @@ def write(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write(text)
+
+
+def atomic_write(path, text):
+    """Durably replace PATH without exposing a partially-written file."""
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".theme-", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def gen_theme_contract(name, theme, roles, style):
+    """Publish the complete theme plus resolved universal roles/style."""
+    contract = dict(theme)
+    contract["name"] = name
+    contract["roles"] = dict(roles)
+    contract["style"] = dict(style)
+    atomic_write(THEME_CONTRACT_FILE,
+                 json.dumps(contract, indent=2, ensure_ascii=False) + "\n")
+    return contract
+
+
+def apply_hyprland_adapter():
+    """Delegate compositor rendering to hyprland-setup when it is installed."""
+    adapter = shutil.which("lakota-hypr-theme")
+    if not adapter:
+        return False
+    result = subprocess.run([adapter, "apply"], text=True)
+    if result.returncode:
+        raise RuntimeError("lakota-hypr-theme failed; Hyprland styling was not reloaded")
+    return True
 
 
 # ── Color helpers (pure, deterministic) ──────────────────────────────
@@ -1189,7 +1228,12 @@ def apply(name, announce=True, targets=None):
     shape_name = theme_effects.profile_shape()
     texture_name = theme_effects.profile_texture()
     anim_name = theme_effects.profile_anim()
-    if "hypr" in tg:      gen_hypr(r, s, shape_name, texture_name, anim_name)
+    resolved_style = theme_effects.resolve(s, shape_name, texture_name)
+    gen_theme_contract(name, t, r, resolved_style)
+    # Hyprland syntax/rendering belong to hyprland-setup. The internal renderer
+    # remains a compatibility fallback for hosts without the adapter.
+    if "hypr" in tg and not apply_hyprland_adapter():
+        gen_hypr(r, s, shape_name, texture_name, anim_name)
     if "waybar" in tg:    gen_waybar(r)
     if "kitty" in tg:     gen_kitty(r, s)
     if "starship" in tg:  gen_starship(r)

@@ -77,6 +77,23 @@ kitty's palette.
 
 ## What gets generated
 
+### Stable desktop contract
+
+Every successful `theme <name>` publishes
+`~/.config/theme-engine/generated/theme.json`. This is the supported input for
+desktop consumers such as Quickshell and Hyprland adapters. It is replaced
+atomically, so readers never observe partial JSON.
+
+The object retains every top-level field from the selected theme definition.
+`name` identifies the selected theme, `roles` contains the complete resolved
+semantic role map, and `style` contains the style after active shape/texture
+profiles have been resolved. Consumers must ignore unknown fields and provide
+fallbacks for missing fields so the contract can evolve compatibly.
+
+When `lakota-hypr-theme` is installed, `theme` delegates Hyprland rendering and
+reload to that hyprland-setup adapter after publishing the contract. The legacy
+internal target remains only as a migration fallback for other installations.
+
 Running `theme <name>` writes (never edit these by hand):
 
 - `~/.config/hypr/generated/theme.conf` — `general{}` border colors + gaps,
