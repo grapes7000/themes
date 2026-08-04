@@ -1,0 +1,383 @@
+#!/usr/bin/env python3
+"""Bridge Theme Engine palettes into Noctalia v5 safely.
+
+Commands:
+  theme-noctalia apply <theme-name>   Generate + activate palette
+  theme-noctalia configure           Disable overlapping Noctalia templates
+  theme-noctalia status              Show current bridge state
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+from typing import Any
+
+HOME = Path.home()
+CFG = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config"))
+STATE = Path(os.environ.get("XDG_STATE_HOME", HOME / ".local/state"))
+THEME_DIR = CFG / "hypr" / "themes"
+NOCTALIA_DIR = CFG / "noctalia"
+NOCTALIA_STATE = STATE / "noctalia" / "settings.toml"
+PALETTE_NAME = "theme-engine-active"
+PALETTE_PATH = NOCTALIA_DIR / "palettes" / f"{PALETTE_NAME}.json"
+BRIDGE_STATE = STATE / "theme-engine" / "noctalia-bridge.json"
+TARGETS_FILE = CFG / "theme-engine" / "targets.conf"
+WAL_PATH = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "wal" / "colors.json"
+
+
+def enabled_targets() -> set[str]:
+    targets: set[str] = set()
+    if not TARGETS_FILE.exists():
+        return targets
+    for raw in TARGETS_FILE.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line:
+            targets.add(line.split("=", 1)[0].strip())
+    return targets
+
+
+def overlap_templates(targets: set[str]) -> tuple[set[str], set[str]]:
+    builtins: set[str] = set()
+    community: set[str] = set()
+    if "kitty" in targets:
+        builtins.add("kitty")
+    if "gtk" in targets or "oomox" in targets:
+        builtins.update({"gtk3", "gtk4"})
+    if "qt" in targets or "kde" in targets:
+        builtins.update({"qt", "kcolorscheme"})
+    if "vscode" in targets:
+        community.add("vscode")
+    if "obsidian" in targets:
+        community.add("obsidian")
+    if "firefox" in targets:
+        community.update({"pywalfox", "pywalfox-beta4"})
+    return builtins, community
+
+
+def atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent), text=True)
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def parse_hex(value: Any, fallback: str) -> str:
+    if isinstance(value, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", value):
+        return value.lower()
+    return fallback.lower()
+
+
+def rgb(color: str) -> tuple[int, int, int]:
+    color = color.lstrip("#")
+    return int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
+
+
+def luminance(color: str) -> float:
+    vals = []
+    for channel in rgb(color):
+        v = channel / 255.0
+        vals.append(v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * vals[0] + 0.7152 * vals[1] + 0.0722 * vals[2]
+
+
+def contrast(a: str, b: str) -> float:
+    la, lb = luminance(a), luminance(b)
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+
+def best_on(background: str, dark: str, light: str) -> str:
+    return max((dark, light), key=lambda candidate: contrast(background, candidate))
+
+
+def blend(a: str, b: str, ratio: float) -> str:
+    ar, ag, ab = rgb(a)
+    br, bg, bb = rgb(b)
+    t = max(0.0, min(1.0, ratio))
+    return "#{:02x}{:02x}{:02x}".format(
+        round(ar + (br - ar) * t),
+        round(ag + (bg - ag) * t),
+        round(ab + (bb - ab) * t),
+    )
+
+
+def load_theme(name: str) -> dict[str, Any]:
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+        raise SystemExit(f"theme-noctalia: invalid theme name: {name!r}")
+    path = THEME_DIR / f"{name}.json"
+    if not path.is_file():
+        raise SystemExit(f"theme-noctalia: theme not found: {path}")
+    with path.open(encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data.get("roles"), dict):
+        raise SystemExit(f"theme-noctalia: {path} has no roles object")
+    return data
+
+
+def resolved_roles(theme: dict[str, Any]) -> dict[str, str]:
+    raw = theme["roles"]
+    bg = parse_hex(raw.get("bg"), "#111318")
+    bg_alt = parse_hex(raw.get("bg_alt"), blend(bg, "#ffffff", 0.08))
+    text = parse_hex(raw.get("text"), "#f1f1f1")
+    text_dim = parse_hex(raw.get("text_dim"), blend(text, bg, 0.35))
+    accent = parse_hex(raw.get("accent"), "#ff4fa3")
+    accent2 = parse_hex(raw.get("accent2"), accent)
+    urgent = parse_hex(raw.get("urgent"), raw.get("ansi_red", "#ff5f6d"))
+    tertiary = parse_hex(raw.get("info"), raw.get("ansi_cyan", accent2))
+    outline = parse_hex(raw.get("border_normal"), raw.get("border_subtle", text_dim))
+    shadow = parse_hex(raw.get("shadow"), theme.get("style", {}).get("shadow_color", "#000000"))
+    hover = parse_hex(raw.get("hover"), blend(bg_alt, accent, 0.18))
+    return {
+        "bg": bg,
+        "bg_alt": bg_alt,
+        "text": text,
+        "text_dim": text_dim,
+        "accent": accent,
+        "accent2": accent2,
+        "tertiary": tertiary,
+        "urgent": urgent,
+        "outline": outline,
+        "shadow": shadow,
+        "hover": hover,
+        "on_accent": parse_hex(raw.get("on_accent"), best_on(accent, bg, text)),
+        "on_accent2": parse_hex(raw.get("on_accent2"), best_on(accent2, bg, text)),
+        "on_tertiary": parse_hex(raw.get("on_info"), best_on(tertiary, bg, text)),
+        "on_urgent": parse_hex(raw.get("on_urgent"), best_on(urgent, bg, text)),
+    }
+
+
+def terminal_payload(raw: dict[str, Any], r: dict[str, str]) -> dict[str, Any]:
+    normal_names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
+    role_names = ["ansi_black", "ansi_red", "ansi_green", "ansi_yellow", "ansi_blue", "ansi_magenta", "ansi_cyan", "ansi_white"]
+    bright_roles = ["ansi_br_black", "ansi_br_red", "ansi_br_green", "ansi_br_yellow", "ansi_br_blue", "ansi_br_magenta", "ansi_br_cyan", "ansi_br_white"]
+    normal = {name: parse_hex(raw.get(role), r["text"] if name == "white" else r["bg_alt"])
+              for name, role in zip(normal_names, role_names)}
+    bright = {name: parse_hex(raw.get(role), normal[name])
+              for name, role in zip(normal_names, bright_roles)}
+    return {
+        "background": r["bg"],
+        "foreground": r["text"],
+        "cursor": parse_hex(raw.get("cursor"), r["accent"]),
+        "cursorText": r["bg"],
+        "selectionBg": parse_hex(raw.get("sel_bg"), r["accent"]),
+        "selectionFg": parse_hex(raw.get("sel_fg"), r["bg"]),
+        "normal": normal,
+        "bright": bright,
+    }
+
+
+def make_variant(theme: dict[str, Any]) -> dict[str, Any]:
+    r = resolved_roles(theme)
+    raw = theme["roles"]
+    return {
+        "mPrimary": r["accent"],
+        "mOnPrimary": r["on_accent"],
+        "mSecondary": r["accent2"],
+        "mOnSecondary": r["on_accent2"],
+        "mTertiary": r["tertiary"],
+        "mOnTertiary": r["on_tertiary"],
+        "mError": r["urgent"],
+        "mOnError": r["on_urgent"],
+        "mSurface": r["bg"],
+        "mOnSurface": r["text"],
+        "mSurfaceVariant": r["bg_alt"],
+        "mOnSurfaceVariant": r["text_dim"],
+        "mOutline": r["outline"],
+        "mShadow": r["shadow"],
+        "mHover": r["hover"],
+        "mOnHover": best_on(r["hover"], r["bg"], r["text"]),
+        "terminal": terminal_payload(raw, r),
+    }
+
+
+def format_toml_array(values: list[str]) -> str:
+    return "[ " + ", ".join(json.dumps(value) for value in values) + " ]"
+
+
+def find_section(lines: list[str], section: str) -> tuple[int, int] | None:
+    wanted = f"[{section}]"
+    start = None
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == wanted:
+            start = index
+            continue
+        if start is not None and stripped.startswith("[") and stripped.endswith("]"):
+            return start, index
+    return None if start is None else (start, len(lines))
+
+
+def set_key(lines: list[str], section: str, key: str, value: str) -> list[str]:
+    found = find_section(lines, section)
+    assignment = f"{key} = {value}\n"
+    if found is None:
+        if lines and lines[-1].strip():
+            lines.append("\n")
+        lines.extend([f"[{section}]\n", assignment])
+        return lines
+    start, end = found
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    for index in range(start + 1, end):
+        if pattern.match(lines[index]):
+            lines[index] = assignment
+            return lines
+    lines.insert(end, assignment)
+    return lines
+
+
+def get_array(lines: list[str], section: str, key: str) -> list[str] | None:
+    found = find_section(lines, section)
+    if found is None:
+        return None
+    start, end = found
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=\s*(.*)$")
+    for index in range(start + 1, end):
+        match = pattern.match(lines[index])
+        if not match:
+            continue
+        value = match.group(1).strip()
+        cursor = index + 1
+        while value.count("[") > value.count("]") and cursor < end:
+            value += lines[cursor].strip()
+            cursor += 1
+        try:
+            parsed = json.loads(value.replace("'", '"'))
+        except json.JSONDecodeError:
+            return None
+        return [item for item in parsed if isinstance(item, str)] if isinstance(parsed, list) else None
+    return None
+
+
+def set_array(lines: list[str], section: str, key: str, values: list[str]) -> list[str]:
+    found = find_section(lines, section)
+    assignment = f"{key} = {format_toml_array(values)}\n"
+    if found is None:
+        if lines and lines[-1].strip():
+            lines.append("\n")
+        lines.extend([f"[{section}]\n", assignment])
+        return lines
+    start, end = found
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    for index in range(start + 1, end):
+        if pattern.match(lines[index]):
+            finish = index + 1
+            balance = lines[index].count("[") - lines[index].count("]")
+            while balance > 0 and finish < end:
+                balance += lines[finish].count("[") - lines[finish].count("]")
+                finish += 1
+            lines[index:finish] = [assignment]
+            return lines
+    lines.insert(end, assignment)
+    return lines
+
+
+def patch_noctalia(*, activate: bool, mode: str | None = None) -> None:
+    lines = NOCTALIA_STATE.read_text(encoding="utf-8").splitlines(keepends=True) if NOCTALIA_STATE.exists() else []
+    if activate:
+        lines = set_key(lines, "theme", "source", json.dumps("custom"))
+        lines = set_key(lines, "theme", "custom_palette", json.dumps(PALETTE_NAME))
+        if mode:
+            lines = set_key(lines, "theme", "mode", json.dumps(mode))
+    atomic_write(NOCTALIA_STATE, "".join(lines))
+
+
+def write_pywal(name: str, theme: dict[str, Any], variant: dict[str, Any]) -> None:
+    terminal = variant["terminal"]
+    ordered = [
+        terminal["normal"][key] for key in ("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white")
+    ] + [
+        terminal["bright"][key] for key in ("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white")
+    ]
+    wallpaper = CFG / "hypr" / "wallpapers" / f"{name}.png"
+    payload = {
+        "wallpaper": str(wallpaper),
+        "special": {
+            "background": terminal["background"],
+            "foreground": terminal["foreground"],
+            "cursor": terminal["cursor"],
+        },
+        "colors": {f"color{index}": color for index, color in enumerate(ordered)},
+    }
+    atomic_write(WAL_PATH, json.dumps(payload, indent=2) + "\n")
+
+
+def update_firefox_if_owned() -> None:
+    if "firefox" not in enabled_targets() or not shutil.which("noctalia"):
+        return
+    subprocess.run(["noctalia", "firefox-theme", "update"], check=False,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def reload_noctalia() -> None:
+    if shutil.which("noctalia"):
+        subprocess.run(["noctalia", "msg", "config-reload"], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def cmd_apply(name: str) -> None:
+    theme = load_theme(name)
+    variant = make_variant(theme)
+    payload = {"dark": variant, "light": variant}
+    atomic_write(PALETTE_PATH, json.dumps(payload, indent=2) + "\n")
+    write_pywal(name, theme, variant)
+    mode = "dark" if bool(theme.get("dark", True)) else "light"
+    patch_noctalia(activate=True, mode=mode)
+    BRIDGE_STATE.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(BRIDGE_STATE, json.dumps({"theme": name, "palette": str(PALETTE_PATH), "mode": mode}, indent=2) + "\n")
+    reload_noctalia()
+    update_firefox_if_owned()
+    print(f"Noctalia palette -> {name} ({mode})")
+
+
+def cmd_configure() -> None:
+    targets = enabled_targets()
+    overlap_builtins, overlap_community = overlap_templates(targets)
+    lines = NOCTALIA_STATE.read_text(encoding="utf-8").splitlines(keepends=True) if NOCTALIA_STATE.exists() else []
+    builtins = get_array(lines, "theme.templates", "builtin_ids") or []
+    community = get_array(lines, "theme.templates", "community_ids") or []
+    lines = set_array(lines, "theme.templates", "builtin_ids", [x for x in builtins if x not in overlap_builtins])
+    lines = set_array(lines, "theme.templates", "community_ids", [x for x in community if x not in overlap_community])
+    atomic_write(NOCTALIA_STATE, "".join(lines))
+    reload_noctalia()
+    removed = sorted(overlap_builtins | overlap_community)
+    print("Disabled overlapping Noctalia templates: " + (", ".join(removed) if removed else "none"))
+
+
+def cmd_status() -> None:
+    if BRIDGE_STATE.exists():
+        print(BRIDGE_STATE.read_text(encoding="utf-8").strip())
+    else:
+        print("No Noctalia theme has been synced yet.")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+    apply_parser = sub.add_parser("apply")
+    apply_parser.add_argument("theme")
+    sub.add_parser("configure")
+    sub.add_parser("status")
+    args = parser.parse_args()
+    if args.command == "apply":
+        cmd_apply(args.theme)
+    elif args.command == "configure":
+        cmd_configure()
+    else:
+        cmd_status()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
