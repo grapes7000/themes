@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Restore the exact pre-install snapshot created by install-noctalia.sh."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+
+HOME = Path.home()
+STATE = Path(os.environ.get("XDG_STATE_HOME", HOME / ".local/state"))
+ROOT = STATE / "theme-engine" / "noctalia-installs"
+CURRENT = ROOT / "current"
+
+
+def snapshot_path(path: Path, snapshot: Path, records: list[dict[str, str]]) -> None:
+    key = str(path)
+    target = snapshot / "root" / key.lstrip("/")
+    if path.is_symlink():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.symlink_to(os.readlink(path))
+        records.append({"path": key, "kind": "symlink"})
+    elif path.is_dir():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(path, target, symlinks=True)
+        records.append({"path": key, "kind": "dir"})
+    elif path.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+        records.append({"path": key, "kind": "file"})
+    else:
+        records.append({"path": key, "kind": "absent"})
+
+
+def restore_record(record: dict[str, str], snapshot: Path) -> None:
+    path = Path(record["path"])
+    kind = record["kind"]
+    source = snapshot / "root" / str(path).lstrip("/")
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+    elif path.is_dir():
+        shutil.rmtree(path)
+    if kind == "absent":
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if kind == "dir":
+        shutil.copytree(source, path, symlinks=True)
+    elif kind == "symlink":
+        path.symlink_to(os.readlink(source))
+    else:
+        shutil.copy2(source, path)
+
+
+def reload_apps() -> None:
+    commands = [
+        ["hyprctl", "reload"],
+        ["pkill", "-USR1", "-x", "kitty"],
+        ["noctalia", "msg", "config-reload"],
+    ]
+    for command in commands:
+        try:
+            subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except FileNotFoundError:
+            pass
+
+
+def cmd_snapshot(paths_file: Path, snapshot: Path) -> None:
+    snapshot.mkdir(parents=True, exist_ok=False)
+    paths = [Path(line) for line in paths_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    records: list[dict[str, str]] = []
+    for path in paths:
+        snapshot_path(path, snapshot, records)
+    (snapshot / "manifest.json").write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+    CURRENT.parent.mkdir(parents=True, exist_ok=True)
+    CURRENT.unlink(missing_ok=True)
+    CURRENT.symlink_to(snapshot)
+    print(snapshot)
+
+
+def cmd_restore(snapshot: Path | None, purge: bool) -> None:
+    target = snapshot or (CURRENT.resolve() if CURRENT.exists() else None)
+    if target is None or not (target / "manifest.json").exists():
+        raise SystemExit("theme-noctalia-uninstall: no snapshot found")
+    records = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+    for record in reversed(records):
+        restore_record(record, target)
+        print("restored", record["path"])
+    reload_apps()
+    if CURRENT.exists() and CURRENT.resolve() == target.resolve():
+        CURRENT.unlink(missing_ok=True)
+    if purge:
+        shutil.rmtree(target)
+    else:
+        print(f"Backup retained at {target}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+    snap = sub.add_parser("snapshot")
+    snap.add_argument("--paths-file", type=Path, required=True)
+    snap.add_argument("--snapshot", type=Path, required=True)
+    restore = sub.add_parser("restore")
+    restore.add_argument("--snapshot", type=Path)
+    restore.add_argument("--purge-backup", action="store_true")
+    args = parser.parse_args()
+    if args.command == "snapshot":
+        cmd_snapshot(args.paths_file, args.snapshot)
+    else:
+        cmd_restore(args.snapshot, args.purge_backup)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

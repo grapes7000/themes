@@ -18,6 +18,7 @@ import theme_waybar
 CFG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
 THEME_DIR = CFG / "hypr" / "themes"
 ACTIVE_FILE = CFG / "hypr" / "generated" / ".active"
+TARGETS_FILE = CFG / "theme-engine" / "targets.conf"
 PREVIEW_NAME = "_theme_studio_preview"
 
 
@@ -27,6 +28,23 @@ def active_theme() -> str | None:
         return value or None
     except OSError:
         return None
+
+
+def enabled_targets() -> set[str] | None:
+    """Read target ownership, or return None for the historic all-defaults mode."""
+    if not TARGETS_FILE.exists():
+        return None
+    targets: set[str] = set()
+    for raw in TARGETS_FILE.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line:
+            targets.add(line.split("=", 1)[0].strip())
+    return targets
+
+
+def target_enabled(name: str) -> bool:
+    targets = enabled_targets()
+    return True if targets is None else name in targets
 
 
 def legacy_command() -> list[str] | None:
@@ -39,11 +57,22 @@ def legacy_command() -> list[str] | None:
     sibling = Path(__file__).resolve().with_name("theme-legacy")
     if sibling.exists():
         return [str(sibling)]
-    # Development checkout: original engine is named bin/theme while the studio
-    # entry point is bin/theme-studio.
     source = Path(__file__).resolve().with_name("theme")
     if source.exists() and source.name != Path(sys.argv[0]).name:
         return [str(source)]
+    return None
+
+
+def noctalia_command() -> list[str] | None:
+    explicit = os.environ.get("THEME_NOCTALIA_COMMAND")
+    if explicit:
+        return explicit.split()
+    found = shutil.which("theme-noctalia")
+    if found:
+        return [found]
+    sibling = Path(__file__).resolve().with_name("theme-noctalia")
+    if sibling.exists():
+        return [str(sibling)]
     return None
 
 
@@ -81,12 +110,27 @@ def _run_legacy(name: str) -> tuple[bool, str]:
     return proc.returncode == 0, message
 
 
+def _sync_noctalia(name: str) -> tuple[bool, str]:
+    command = noctalia_command()
+    if not command:
+        return False, ""
+    proc = subprocess.run(command + ["apply", name], text=True, capture_output=True)
+    message = (proc.stdout or proc.stderr or "").strip()
+    return proc.returncode == 0, message
+
+
+def _apply_waybar(theme: dict[str, Any], *, restart: bool) -> dict[str, Path]:
+    if not target_enabled("waybar"):
+        return {}
+    return theme_waybar.apply(theme, restart=restart)
+
+
 def apply_studio_overrides(name: str, *, restart_waybar: bool = False,
                            components: list[str] | None = None) -> dict[str, Any]:
     """Apply only Studio-managed component layers after a legacy subcommand."""
     theme = load_theme(name)
     component_result = apply_all(theme, components)
-    waybar_paths = theme_waybar.apply(theme, restart=restart_waybar)
+    waybar_paths = _apply_waybar(theme, restart=restart_waybar)
     return {
         "name": name,
         "components": component_result,
@@ -99,13 +143,16 @@ def apply_theme(name: str, *, restart_waybar: bool = False,
     theme = load_theme(name)
     legacy_ok, legacy_message = _run_legacy(name)
     component_result = apply_all(theme, components)
-    waybar_paths = theme_waybar.apply(theme, restart=restart_waybar)
+    waybar_paths = _apply_waybar(theme, restart=restart_waybar)
+    noctalia_ok, noctalia_message = _sync_noctalia(name)
     ACTIVE_FILE.parent.mkdir(parents=True, exist_ok=True)
     ACTIVE_FILE.write_text(name + "\n", encoding="utf-8")
     return {
         "name": name,
         "legacy_ok": legacy_ok,
         "legacy_message": legacy_message,
+        "noctalia_ok": noctalia_ok,
+        "noctalia_message": noctalia_message,
         "components": component_result,
         "waybar": {k: str(v) for k, v in waybar_paths.items()},
     }
