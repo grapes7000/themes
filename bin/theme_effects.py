@@ -20,6 +20,10 @@ PROFILE_PATH = os.path.join(
 # ── Shapes: geometry overrides ─────────────────────────────────────────
 
 SHAPES = {
+    "uniform-8": {
+        "corner_radius": 8,
+        "rounding_power": 2.0,
+    },
     "sharp": {
         "corner_radius_offset": -12,
         "rounding_power": 5.0,
@@ -256,7 +260,7 @@ TEXTURE_DIRECT_KEYS = [
 
 # Shape keys that directly replace theme values
 SHAPE_DIRECT_KEYS = [
-    "border_width",
+    "border_width", "corner_radius",
 ]
 
 # ── Profile persistence ──────────────────────────────────────────────
