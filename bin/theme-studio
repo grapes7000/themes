@@ -44,10 +44,44 @@ def run_legacy(args: list[str]) -> int:
     return subprocess.call(command + args)
 
 
+def _enable_live_preview_by_default() -> None:
+    """Make Theme Studio edits reach the desktop immediately.
+
+    ThemeEditor intentionally gates preview callbacks behind its
+    ``desktop_preview`` flag. The TUI presents itself as a live editor, but new
+    editor sessions currently start with that flag disabled, so mutations only
+    update the in-memory draft. Enable it before importing ``theme_tui`` so
+    every editor constructed by the UI previews changes and can still restore
+    the original theme through the existing cancel/disable callbacks.
+    """
+    import theme_editor
+
+    original_post_init = theme_editor.ThemeEditor.__post_init__
+    if getattr(original_post_init, "_theme_live_preview_default", False):
+        return
+
+    def post_init_with_preview(editor) -> None:
+        original_post_init(editor)
+        editor.desktop_preview = True
+
+    post_init_with_preview._theme_live_preview_default = True
+    theme_editor.ThemeEditor.__post_init__ = post_init_with_preview
+
+    original_from_data = theme_editor.ThemeEditor.from_data.__func__
+
+    def from_data_with_preview(cls, *args, **kwargs):
+        editor = original_from_data(cls, *args, **kwargs)
+        editor.desktop_preview = True
+        return editor
+
+    theme_editor.ThemeEditor.from_data = classmethod(from_data_with_preview)
+
+
 def launch(name: str | None = None) -> int:
     if name:
         os.environ["THEME_STUDIO_THEME"] = name
     try:
+        _enable_live_preview_by_default()
         from theme_tui import launch as launch_tui
         launch_tui()
         return 0
