@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "bin"))
+import theme_runtime
+
+
+def configure(monkeypatch, tmp_path):
+    cfg = tmp_path / "config"
+    cache = tmp_path / "cache"
+    monkeypatch.setattr(theme_runtime, "CFG", cfg)
+    monkeypatch.setattr(theme_runtime, "CACHE", cache)
+    monkeypatch.setattr(theme_runtime, "RENDER_ROOT", cache / "theme-engine" / "wallpapers")
+    return cfg, cache
+
+
+def test_publish_current_wallpaper_creates_stable_symlink_chain(monkeypatch, tmp_path):
+    cfg, cache = configure(monkeypatch, tmp_path)
+    rendered = cache / "theme-engine" / "wallpapers" / "arch-retro" / "nord.png"
+    rendered.parent.mkdir(parents=True)
+    rendered.write_bytes(b"nord")
+
+    current, homepage = theme_runtime._publish_current_wallpaper(rendered)
+
+    assert current == cache / "theme-engine" / "wallpapers" / "current.png"
+    assert homepage == cfg / "quickshell" / "homepage-images" / "theme-wallpaper.png"
+    assert current.is_symlink()
+    assert homepage.is_symlink()
+    assert current.resolve() == rendered.resolve()
+    assert homepage.resolve() == rendered.resolve()
+
+
+def test_publish_current_wallpaper_retargets_links_on_theme_change(monkeypatch, tmp_path):
+    _, cache = configure(monkeypatch, tmp_path)
+    nord = cache / "theme-engine" / "wallpapers" / "arch-retro" / "nord.png"
+    gruvbox = cache / "theme-engine" / "wallpapers" / "arch-retro" / "gruvbox.png"
+    nord.parent.mkdir(parents=True)
+    nord.write_bytes(b"nord")
+    gruvbox.write_bytes(b"gruvbox")
+
+    current, homepage = theme_runtime._publish_current_wallpaper(nord)
+    assert homepage.resolve() == nord.resolve()
+
+    theme_runtime._publish_current_wallpaper(gruvbox)
+    assert current.resolve() == gruvbox.resolve()
+    assert homepage.resolve() == gruvbox.resolve()
