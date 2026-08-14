@@ -135,6 +135,7 @@ def atomic_write(path, text):
 def gen_theme_contract(name, theme, roles, style):
     """Publish the complete theme plus resolved universal roles/style."""
     contract = dict(theme)
+    contract["schema_version"] = 1
     contract["name"] = name
     contract["roles"] = dict(roles)
     contract["style"] = dict(style)
