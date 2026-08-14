@@ -48,7 +48,7 @@ SAMPLE_ROLES = {
 
 class TestAxisNames:
     def test_shapes_exist(self):
-        assert set(theme_effects.list_shapes()) == {"sharp", "rounded", "pillowy", "boxy"}
+        assert set(theme_effects.list_shapes()) == {"uniform-8", "sharp", "rounded", "pillowy", "boxy"}
 
     def test_textures_exist(self):
         assert set(theme_effects.list_textures()) == {"clear", "frosted", "glaze", "haze", "bloom"}
