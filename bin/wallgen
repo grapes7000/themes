@@ -1,140 +1,549 @@
 #!/usr/bin/env python3
-"""wallgen — generate a soft "blurry blob" wallpaper from a theme's palette.
+"""wallgen — Theme Engine wallpaper generator and semantic template engine.
 
-    wallgen                 # (re)generate wallpapers for ALL themes
-    wallgen <name>          # just one theme
-    wallgen <name> --set    # generate it and set it live via hyprpaper
+Classic blurry wallpapers (backward compatible):
+    wallgen                 # regenerate blurry wallpapers for ALL themes
+    wallgen <name>          # one theme
+    wallgen <name> --set    # generate and set it live
 
-Reads ~/.config/hypr/themes/<name>.json, paints big blurred color blobs from
-the theme's accent colors over a subtle background gradient, and writes
-~/.config/hypr/wallpapers/<name>.png (2560x1440). Deterministic per theme.
+Semantic wallpaper templates:
+    wallgen semantic                    # status
+    wallgen semantic list               # list templates
+    wallgen semantic use <name>         # activate a template
+    wallgen semantic none               # disable template recoloring
+    wallgen semantic import IMAGE [options]
+    wallgen semantic apply <theme> [--set]
 
-Only dependency: Pillow  (pacman -S python-pillow).
+A semantic template maps dominant source-image colors to Theme Engine roles
+(bg, text, ansi_blue, urgent, ...). The same artwork can then be recolored for
+any current or future theme. Pillow is the only dependency.
 """
-import json, os, sys, glob, random, math, subprocess
+from __future__ import annotations
+
+import argparse
+import colorsys
+import json
+import math
+import os
+import random
+import re
+import subprocess
+import sys
+import tempfile
+from collections import Counter
+from pathlib import Path
+from typing import Any, Iterable
+
 from PIL import Image, ImageDraw, ImageFilter
 
-HOME = os.path.expanduser("~")
-CFG = os.path.join(HOME, ".config")
-THEME_DIR = os.path.join(CFG, "hypr", "themes")
-WALL_DIR = os.path.join(CFG, "hypr", "wallpapers")
+HOME = Path.home()
+CFG = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config"))
+CACHE = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache"))
+THEME_DIR = CFG / "hypr" / "themes"
+WALL_DIR = CFG / "hypr" / "wallpapers"
+TEMPLATE_ROOT = CFG / "theme-engine" / "wallpaper-templates"
+ACTIVE_TEMPLATE_FILE = CFG / "theme-engine" / "wallpaper-template"
+RENDER_ROOT = CACHE / "theme-engine" / "wallpapers"
 W, H = 2560, 1440
+TEMPLATE_VERSION = 1
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+BUILTIN_TEMPLATES: dict[str, dict[str, Any]] = {
+    "arch-retro": {
+        "source": "arch-retro-source.png",
+        "regions": [
+            {"source": "#282828", "role": "bg"},
+            {"source": "#689d6a", "role": "ansi_green"},
+            {"source": "#458588", "role": "ansi_blue"},
+            {"source": "#d79921", "role": "ansi_yellow"},
+            {"source": "#cc241d", "role": "ansi_red"},
+            {"source": "#ebdbb2", "role": "text"},
+        ],
+    },
+}
+
+ROLE_FALLBACKS: dict[str, tuple[str, ...]] = {
+    "bg": ("surface_0", "bg_alt"),
+    "bg_alt": ("surface_1", "bg"),
+    "text": ("ansi_br_white", "ansi_white"),
+    "text_dim": ("ansi_white", "text"),
+    "ansi_red": ("urgent", "accent"),
+    "ansi_green": ("success", "accent2", "accent"),
+    "ansi_yellow": ("warning", "accent", "accent2"),
+    "ansi_blue": ("info", "accent2", "accent"),
+    "ansi_magenta": ("accent", "accent2"),
+    "ansi_cyan": ("info", "accent2", "accent"),
+    "ansi_black": ("bg_alt", "bg"),
+    "ansi_white": ("text_dim", "text"),
+    "ansi_br_red": ("ansi_red", "urgent", "accent"),
+    "ansi_br_green": ("ansi_green", "success", "accent2"),
+    "ansi_br_yellow": ("ansi_yellow", "warning", "accent"),
+    "ansi_br_blue": ("ansi_blue", "info", "accent2"),
+    "ansi_br_magenta": ("ansi_magenta", "accent"),
+    "ansi_br_cyan": ("ansi_cyan", "info", "accent2"),
+    "ansi_br_black": ("border_normal", "bg_alt", "bg"),
+    "ansi_br_white": ("text", "ansi_white"),
+    "success": ("ansi_green", "accent2", "accent"),
+    "warning": ("ansi_yellow", "accent", "accent2"),
+    "info": ("ansi_blue", "accent2", "accent"),
+    "urgent": ("ansi_red", "accent"),
+    "accent": ("focus", "text"),
+    "accent2": ("accent", "focus", "text"),
+}
 
 
-def hex2rgb(c):
+def hex2rgb(c: str) -> tuple[int, int, int]:
     c = c.lstrip("#")
     return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def lerp(a, b, t):
+def lerp(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
     return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
 
 
-def clamp(v, lo=0, hi=255):
+def clamp(v: float, lo: int = 0, hi: int = 255) -> int:
     return max(lo, min(hi, int(v)))
 
 
-def shade(rgb, f):
-    """f<0 darken toward black, f>0 lighten toward white."""
-    if f >= 0:
-        return tuple(clamp(rgb[i] + (255 - rgb[i]) * f) for i in range(3))
-    return tuple(clamp(rgb[i] * (1 + f)) for i in range(3))
+def shade(color: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
+    if factor >= 0:
+        return tuple(clamp(color[i] + (255 - color[i]) * factor) for i in range(3))
+    return tuple(clamp(color[i] * (1 + factor)) for i in range(3))
 
 
-def gradient_bg(top, bottom):
+def gradient_bg(top: tuple[int, int, int], bottom: tuple[int, int, int]) -> Image.Image:
     base = Image.new("RGB", (W, H))
     px = base.load()
-    # vertical gradient, computed per-row then written (fast enough at 1440p)
     for y in range(H):
-        t = y / (H - 1)
-        col = lerp(top, bottom, t)
+        color = lerp(top, bottom, y / (H - 1))
         for x in range(W):
-            px[x, y] = col
+            px[x, y] = color
     return base
 
 
-def make(name, roles, dark):
+def make_blob(name: str, roles: dict[str, str], dark: bool) -> Path:
     rnd = random.Random(hash(name) & 0xffffffff)
     bg = hex2rgb(roles["bg"])
     bg2 = hex2rgb(roles.get("bg_alt", roles["bg"]))
-
-    # background: gentle diagonal-ish gradient between the two darkest surfaces
     top = shade(bg, 0.04 if dark else -0.02)
-    bot = shade(bg2, -0.06 if dark else -0.03)
-    base = gradient_bg(top, bot).convert("RGBA")
-
-    # candidate blob colors: the theme's accents (deduped, order-stable)
-    picks = ["focus", "accent", "accent2", "ansi_blue", "ansi_magenta",
-             "ansi_cyan", "ansi_green", "urgent"]
-    seen, colors = set(), []
-    for k in picks:
-        v = roles.get(k)
-        if v and v.lower() not in seen:
-            seen.add(v.lower()); colors.append(hex2rgb(v))
+    bottom = shade(bg2, -0.06 if dark else -0.03)
+    base = gradient_bg(top, bottom).convert("RGBA")
+    picks = ["focus", "accent", "accent2", "ansi_blue", "ansi_magenta", "ansi_cyan", "ansi_green", "urgent"]
+    seen: set[str] = set()
+    colors: list[tuple[int, int, int]] = []
+    for key in picks:
+        value = roles.get(key)
+        if value and value.lower() not in seen:
+            seen.add(value.lower())
+            colors.append(hex2rgb(value))
     if not colors:
         colors = [hex2rgb(roles["accent"])]
-
-    # blob layer, painted then blurred for that dreamy falloff
-    n = 7
     blobs = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    for i in range(n):
-        col = colors[i % len(colors)]
-        # brighten blobs a touch on dark themes so they glow off the bg
-        col = shade(col, 0.10 if dark else -0.05)
-        r = rnd.randint(420, 820)
+    for index in range(7):
+        color = shade(colors[index % len(colors)], 0.10 if dark else -0.05)
+        radius = rnd.randint(420, 820)
         cx = rnd.randint(int(-W * 0.1), int(W * 1.1))
         cy = rnd.randint(int(-H * 0.1), int(H * 1.1))
         alpha = rnd.randint(90, 165)
         layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        d = ImageDraw.Draw(layer)
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=col + (alpha,))
-        layer = layer.filter(ImageFilter.GaussianBlur(r * 0.42))
+        ImageDraw.Draw(layer).ellipse([cx - radius, cy - radius, cx + radius, cy + radius], fill=color + (alpha,))
+        layer = layer.filter(ImageFilter.GaussianBlur(radius * 0.42))
         blobs = Image.alpha_composite(blobs, layer)
-
-    # one more soft blur to melt the blobs together
     blobs = blobs.filter(ImageFilter.GaussianBlur(60))
-    img = Image.alpha_composite(base, blobs)
-
-    # subtle vignette to keep edges calm
-    vig = Image.new("L", (W, H), 0)
-    dv = ImageDraw.Draw(vig)
-    dv.ellipse([-W * 0.25, -H * 0.25, W * 1.25, H * 1.25], fill=255)
-    vig = vig.filter(ImageFilter.GaussianBlur(300))
+    image = Image.alpha_composite(base, blobs)
+    vignette = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(vignette).ellipse([-W * 0.25, -H * 0.25, W * 1.25, H * 1.25], fill=255)
+    vignette = vignette.filter(ImageFilter.GaussianBlur(300))
     dark_layer = Image.new("RGBA", (W, H), (0, 0, 0, 90 if dark else 40))
-    img = Image.composite(img, Image.alpha_composite(img, dark_layer), vig)
-
-    os.makedirs(WALL_DIR, exist_ok=True)
-    out = os.path.join(WALL_DIR, name + ".png")
-    img.convert("RGB").save(out)
+    image = Image.composite(image, Image.alpha_composite(image, dark_layer), vignette)
+    WALL_DIR.mkdir(parents=True, exist_ok=True)
+    out = WALL_DIR / f"{name}.png"
+    image.convert("RGB").save(out)
     return out
 
 
-def load(name):
-    p = os.path.join(THEME_DIR, name + ".json")
-    if not os.path.exists(p):
-        sys.exit(f"wallgen: unknown theme '{name}'")
-    t = json.load(open(p))
-    return t["roles"], t.get("dark", True)
+def load_theme(name: str) -> tuple[dict[str, str], bool]:
+    path = THEME_DIR / f"{name}.json"
+    if not path.exists():
+        raise ValueError(f"unknown theme '{name}'")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    roles = data.get("roles")
+    if not isinstance(roles, dict):
+        raise ValueError(f"theme '{name}' has no roles object")
+    return {str(k): str(v).lower() for k, v in roles.items() if isinstance(v, str)}, bool(data.get("dark", True))
 
 
-def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    setflag = "--set" in sys.argv[1:]
-    names = args or sorted(os.path.splitext(os.path.basename(p))[0]
-                           for p in glob.glob(os.path.join(THEME_DIR, "*.json")))
-    out = None
-    for nm in names:
-        roles, dark = load(nm)
-        out = make(nm, roles, dark)
-        print("wrote", out)
-    if setflag and out and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-        subprocess.run(["hyprctl", "hyprpaper", "unload", "all"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["hyprctl", "hyprpaper", "preload", out],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["hyprctl", "hyprpaper", "wallpaper", f",{out}"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def safe_name(value: str) -> str:
+    name = re.sub(r"[^a-z0-9_-]+", "-", value.strip().lower()).strip("-_")
+    if not name or not NAME_RE.fullmatch(name):
+        raise ValueError(f"invalid name: {value!r}")
+    return name
+
+
+def normalize_hex(value: str) -> str:
+    if not isinstance(value, str) or not HEX_RE.fullmatch(value):
+        raise ValueError(f"invalid color {value!r}; expected #RRGGBB")
+    return value.lower()
+
+
+def color_hex(channels: Iterable[float]) -> str:
+    values = [max(0, min(255, int(round(value)))) for value in channels]
+    return "#" + "".join(f"{value:02x}" for value in values)
+
+
+def atomic_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix="." + path.name, suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def atomic_json(path: Path, payload: dict[str, Any]) -> None:
+    atomic_text(path, json.dumps(payload, indent=2) + "\n")
+
+
+def active_template() -> str | None:
+    try:
+        value = ACTIVE_TEMPLATE_FILE.read_text(encoding="utf-8").strip()
+        return value or None
+    except OSError:
+        return None
+
+
+def user_template_path(name: str) -> Path:
+    return TEMPLATE_ROOT / safe_name(name)
+
+
+def materialize_builtin(name: str) -> bool:
+    name = safe_name(name)
+    builtin = BUILTIN_TEMPLATES.get(name)
+    if not builtin:
+        return False
+    root = user_template_path(name)
+    if (root / "template.json").exists():
+        return True
+    source = WALL_DIR / str(builtin["source"])
+    if not source.is_file():
+        return False
+    root.mkdir(parents=True, exist_ok=True)
+    with Image.open(source) as opened:
+        opened.convert("RGBA").save(root / "source.png", format="PNG", optimize=True)
+    atomic_json(root / "template.json", {"version": TEMPLATE_VERSION, "name": name, "source": "source.png", "regions": builtin["regions"], "render": {"preserve_antialiasing": True, "max_blend_error": 14.0}, "builtin": True})
+    return True
+
+
+def list_templates() -> list[str]:
+    names = set(BUILTIN_TEMPLATES)
+    if TEMPLATE_ROOT.exists():
+        names.update(path.name for path in TEMPLATE_ROOT.iterdir() if path.is_dir() and (path / "template.json").is_file())
+    return sorted(names)
+
+
+def set_active_template(name: str | None) -> None:
+    if name is None:
+        ACTIVE_TEMPLATE_FILE.unlink(missing_ok=True)
+        return
+    name = safe_name(name)
+    if not (user_template_path(name) / "template.json").exists() and not materialize_builtin(name):
+        raise ValueError(f"wallpaper template '{name}' does not exist")
+    atomic_text(ACTIVE_TEMPLATE_FILE, name + "\n")
+
+
+def load_template(name: str) -> dict[str, Any]:
+    name = safe_name(name)
+    if not (user_template_path(name) / "template.json").exists():
+        materialize_builtin(name)
+    path = user_template_path(name) / "template.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"wallpaper template '{name}' does not exist") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"wallpaper template '{name}' has invalid JSON: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("version") != TEMPLATE_VERSION:
+        raise ValueError(f"wallpaper template '{name}' uses an unsupported format")
+    regions = payload.get("regions")
+    if not isinstance(regions, list) or len(regions) < 2:
+        raise ValueError(f"wallpaper template '{name}' needs at least two regions")
+    seen: set[str] = set()
+    for region in regions:
+        if not isinstance(region, dict):
+            raise ValueError(f"wallpaper template '{name}' has an invalid region")
+        source = normalize_hex(region.get("source", ""))
+        role = region.get("role")
+        if not isinstance(role, str) or not role:
+            raise ValueError(f"wallpaper template '{name}' region {source} has no role")
+        if source in seen:
+            raise ValueError(f"wallpaper template '{name}' repeats {source}")
+        seen.add(source)
+    return payload
+
+
+def resolve_role(roles: dict[str, str], role: str) -> str:
+    for candidate in (role,) + ROLE_FALLBACKS.get(role, ()) + ("accent", "text", "bg"):
+        value = roles.get(candidate)
+        if value and HEX_RE.fullmatch(value):
+            return value.lower()
+    raise ValueError(f"theme cannot resolve wallpaper role '{role}'")
+
+
+def discover_regions(image_path: Path, *, max_regions: int = 12, min_percent: float = 0.25) -> list[dict[str, Any]]:
+    with Image.open(image_path) as opened:
+        image = opened.convert("RGBA")
+        opaque = [(r, g, b) for r, g, b, alpha in image.getdata() if alpha > 0]
+    if not opaque:
+        raise ValueError("image contains no visible pixels")
+    total = len(opaque)
+    counts = Counter(opaque)
+    floor = max(1, math.ceil(total * min_percent / 100.0))
+    selected = [(color, count) for color, count in counts.most_common() if count >= floor][:max_regions]
+    if len(selected) < 2:
+        with Image.open(image_path) as opened:
+            thumb = opened.convert("RGB")
+            thumb.thumbnail((512, 512))
+            quant = thumb.quantize(colors=max(2, max_regions), method=Image.Quantize.MEDIANCUT).convert("RGB")
+            selected = Counter(quant.getdata()).most_common(max_regions)
+        total = sum(count for _, count in selected) or 1
+    return [{"color": color_hex(color), "count": count, "percent": count * 100.0 / total} for color, count in selected]
+
+
+def suggest_role(color: str, reference_roles: dict[str, str] | None = None) -> str:
+    color = normalize_hex(color)
+    if reference_roles:
+        priorities = ("bg", "bg_alt", "text", "text_dim", "ansi_red", "ansi_green", "ansi_yellow", "ansi_blue", "ansi_magenta", "ansi_cyan", "urgent", "accent", "accent2", "focus")
+        for role in priorities:
+            if reference_roles.get(role, "").lower() == color:
+                return role
+    red, green, blue = (channel / 255.0 for channel in hex2rgb(color))
+    hue, saturation, value = colorsys.rgb_to_hsv(red, green, blue)
+    degrees = hue * 360.0
+    if value <= 0.32 and saturation <= 0.28:
+        return "bg"
+    if value <= 0.45 and saturation <= 0.18:
+        return "bg_alt"
+    if value >= 0.72 and saturation <= 0.35:
+        return "text"
+    if saturation <= 0.16:
+        return "text_dim" if value >= 0.45 else "bg_alt"
+    if degrees < 20 or degrees >= 345:
+        return "ansi_red"
+    if degrees < 78:
+        return "ansi_yellow"
+    if degrees < 165:
+        return "ansi_green"
+    if degrees < 180:
+        return "ansi_cyan"
+    if degrees < 260:
+        return "ansi_blue"
+    return "ansi_magenta"
+
+
+def pair_projection(pixel: tuple[int, int, int], anchors: list[tuple[int, int, int]]) -> tuple[int, int, float, float]:
+    px = tuple(float(value) for value in pixel)
+    best = (0, 0, 0.0, float("inf"))
+    for first in range(len(anchors)):
+        a = anchors[first]
+        for second in range(first + 1, len(anchors)):
+            b = anchors[second]
+            delta = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+            denominator = sum(value * value for value in delta)
+            if denominator == 0:
+                continue
+            amount = sum((px[i] - a[i]) * delta[i] for i in range(3)) / denominator
+            amount = max(0.0, min(1.0, amount))
+            projected = tuple(a[i] + delta[i] * amount for i in range(3))
+            error = math.sqrt(sum((px[i] - projected[i]) ** 2 for i in range(3)))
+            if error < best[3]:
+                best = (first, second, amount, error)
+    return best
+
+
+def transform_color(pixel: tuple[int, int, int], source: list[tuple[int, int, int]], target: list[tuple[int, int, int]], max_error: float) -> tuple[int, int, int]:
+    for index, anchor in enumerate(source):
+        if pixel == anchor:
+            return target[index]
+    first, second, amount, error = pair_projection(pixel, source)
+    if error <= max_error:
+        a, b = target[first], target[second]
+        return tuple(max(0, min(255, round(a[i] + (b[i] - a[i]) * amount))) for i in range(3))
+    return pixel
+
+
+def render_template(template_name: str, theme_name: str, roles: dict[str, str]) -> Path:
+    payload = load_template(template_name)
+    root = user_template_path(template_name)
+    source_path = root / str(payload.get("source", "source.png"))
+    if not source_path.is_file():
+        raise ValueError(f"wallpaper template '{template_name}' is missing {source_path.name}")
+    source_anchors = [hex2rgb(region["source"]) for region in payload["regions"]]
+    target_anchors = [hex2rgb(resolve_role(roles, region["role"])) for region in payload["regions"]]
+    max_error = float(payload.get("render", {}).get("max_blend_error", 14.0))
+    with Image.open(source_path) as opened:
+        image = opened.convert("RGBA")
+        unique = set(image.getdata())
+        mapping: dict[tuple[int, int, int, int], tuple[int, int, int, int]] = {}
+        for red, green, blue, alpha in unique:
+            if alpha == 0:
+                mapping[(red, green, blue, alpha)] = (red, green, blue, alpha)
+            else:
+                nr, ng, nb = transform_color((red, green, blue), source_anchors, target_anchors, max_error)
+                mapping[(red, green, blue, alpha)] = (nr, ng, nb, alpha)
+        rendered = Image.new("RGBA", image.size)
+        rendered.putdata([mapping[pixel] for pixel in image.getdata()])
+    output = RENDER_ROOT / safe_name(template_name) / f"{safe_name(theme_name)}.png"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name("." + output.name + ".tmp.png")
+    rendered.save(temporary, format="PNG", optimize=True)
+    os.replace(temporary, output)
+    return output
+
+
+def set_wallpaper(path: Path) -> None:
+    path = path.expanduser().resolve()
+    atomic_text(CFG / "hypr" / "hyprpaper.conf", f"preload = {path}\nwallpaper = , {path}\nsplash = false\n")
+    if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return
+    for command in (["hyprctl", "hyprpaper", "unload", "all"], ["hyprctl", "hyprpaper", "preload", str(path)], ["hyprctl", "hyprpaper", "wallpaper", f",{path}"]):
+        try:
+            subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        except FileNotFoundError:
+            break
+
+
+def copy_source_png(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(source) as opened:
+        temporary = destination.with_name("." + destination.name + ".tmp.png")
+        opened.convert("RGBA").save(temporary, format="PNG", optimize=True)
+        os.replace(temporary, destination)
+
+
+def role_prompt(color: str, percent: float, suggested: str) -> str:
+    while True:
+        try:
+            entered = input(f"  {color}  {percent:6.2f}%  semantic role [{suggested}]: ").strip()
+        except EOFError:
+            entered = ""
+        role = entered or suggested
+        if re.fullmatch(r"[A-Za-z0-9_]+", role):
+            return role
+        print("    use a role like bg, text, ansi_blue, accent, urgent", file=sys.stderr)
+
+
+def import_template(image_path: Path, name: str, *, palette: str | None = None, max_regions: int = 12, min_percent: float = 0.25, accept_suggestions: bool = False, activate: bool = True) -> dict[str, Any]:
+    image_path = image_path.expanduser().resolve()
+    if not image_path.is_file():
+        raise ValueError(f"image not found: {image_path}")
+    name = safe_name(name)
+    reference = load_theme(palette)[0] if palette else None
+    discovered = discover_regions(image_path, max_regions=max_regions, min_percent=min_percent)
+    if len(discovered) < 2:
+        raise ValueError("could not find at least two semantic color regions")
+    regions: list[dict[str, str]] = []
+    print(f"Detected {len(discovered)} dominant regions in {image_path.name}:")
+    for item in discovered:
+        color = item["color"]
+        suggestion = suggest_role(color, reference)
+        role = suggestion if accept_suggestions else role_prompt(color, float(item["percent"]), suggestion)
+        regions.append({"source": color, "role": role})
+    root = user_template_path(name)
+    root.mkdir(parents=True, exist_ok=True)
+    copy_source_png(image_path, root / "source.png")
+    payload: dict[str, Any] = {"version": TEMPLATE_VERSION, "name": name, "source": "source.png", "regions": regions, "render": {"preserve_antialiasing": True, "max_blend_error": 14.0}}
+    if palette:
+        payload["imported_from_palette"] = safe_name(palette)
+    atomic_json(root / "template.json", payload)
+    if activate:
+        set_active_template(name)
+    return payload
+
+
+def semantic_main(args: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="wallgen semantic")
+    sub = parser.add_subparsers(dest="action")
+    sub.add_parser("list", help="list templates")
+    use = sub.add_parser("use", help="activate a template")
+    use.add_argument("name")
+    sub.add_parser("none", help="disable semantic templates")
+    imp = sub.add_parser("import", help="turn an image into a semantic template")
+    imp.add_argument("image", type=Path)
+    imp.add_argument("--name")
+    imp.add_argument("--palette", help="reference theme for exact color matches")
+    imp.add_argument("--max-regions", type=int, default=12)
+    imp.add_argument("--min-percent", type=float, default=0.25)
+    imp.add_argument("--yes", action="store_true", help="accept all suggested roles")
+    imp.add_argument("--no-use", action="store_true", help="import without activating")
+    apply_parser = sub.add_parser("apply", help="render active template for a theme")
+    apply_parser.add_argument("theme")
+    apply_parser.add_argument("--set", action="store_true")
+    ns = parser.parse_args(args)
+    if ns.action is None:
+        current = active_template() or "(none)"
+        print(f"wallpaper template: {current}")
+        print("available: " + (", ".join(list_templates()) or "(none)"))
+        return 0
+    if ns.action == "list":
+        current = active_template()
+        for name in list_templates():
+            print(("* " if name == current else "  ") + name)
+        return 0
+    if ns.action == "use":
+        set_active_template(ns.name)
+        print(f"wallpaper template -> {safe_name(ns.name)}")
+        return 0
+    if ns.action == "none":
+        set_active_template(None)
+        print("wallpaper template -> none")
+        return 0
+    if ns.action == "import":
+        name = ns.name or safe_name(ns.image.stem)
+        payload = import_template(ns.image, name, palette=ns.palette, max_regions=ns.max_regions, min_percent=ns.min_percent, accept_suggestions=ns.yes, activate=not ns.no_use)
+        print(f"imported wallpaper template '{payload['name']}'")
+        return 0
+    if ns.action == "apply":
+        current = active_template()
+        if not current:
+            return 0
+        roles, _ = load_theme(ns.theme)
+        output = render_template(current, ns.theme, roles)
+        if ns.set:
+            set_wallpaper(output)
+        print(output)
+        return 0
+    return 2
+
+
+def classic_main(argv: list[str]) -> int:
+    names = [arg for arg in argv if not arg.startswith("-")]
+    set_flag = "--set" in argv
+    targets = names or sorted(path.stem for path in THEME_DIR.glob("*.json"))
+    output: Path | None = None
+    for name in targets:
+        roles, dark = load_theme(name)
+        output = make_blob(name, roles, dark)
+        print("wrote", output)
+    if set_flag and output:
+        set_wallpaper(output)
+    return 0
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    try:
+        if argv and argv[0] == "semantic":
+            return semantic_main(argv[1:])
+        return classic_main(argv)
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        print(f"wallgen: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
