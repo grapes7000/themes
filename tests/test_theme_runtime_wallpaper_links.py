@@ -1,10 +1,28 @@
 from __future__ import annotations
 
 import sys
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "bin"))
+
+# theme_runtime's component modules are optional in this focused unit test;
+# provide tiny import stubs so the symlink helpers can be tested in isolation.
+components = types.ModuleType("theme_components")
+components.apply_all = lambda *_args, **_kwargs: {}
+sys.modules.setdefault("theme_components", components)
+
+schema = types.ModuleType("theme_schema")
+schema.dump_json = lambda _data: "{}"
+schema.ensure_theme_schema = lambda data: data
+schema.safe_theme_name = lambda name: name
+sys.modules.setdefault("theme_schema", schema)
+
+waybar = types.ModuleType("theme_waybar")
+waybar.apply = lambda *_args, **_kwargs: {}
+sys.modules.setdefault("theme_waybar", waybar)
+
 import theme_runtime
 
 
