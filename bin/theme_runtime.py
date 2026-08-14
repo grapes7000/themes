@@ -31,7 +31,6 @@ def active_theme() -> str | None:
 
 
 def enabled_targets() -> set[str] | None:
-    """Read target ownership, or return None for the historic all-defaults mode."""
     if not TARGETS_FILE.exists():
         return None
     targets: set[str] = set()
@@ -60,6 +59,19 @@ def legacy_command() -> list[str] | None:
     source = Path(__file__).resolve().with_name("theme")
     if source.exists() and source.name != Path(sys.argv[0]).name:
         return [str(source)]
+    return None
+
+
+def wallgen_command() -> list[str] | None:
+    explicit = os.environ.get("THEME_WALLGEN_COMMAND")
+    if explicit:
+        return explicit.split()
+    found = shutil.which("wallgen")
+    if found:
+        return [found]
+    sibling = Path(__file__).resolve().with_name("wallgen")
+    if sibling.exists():
+        return [str(sibling)]
     return None
 
 
@@ -110,6 +122,17 @@ def _run_legacy(name: str) -> tuple[bool, str]:
     return proc.returncode == 0, message
 
 
+def _sync_semantic_wallpaper(name: str) -> tuple[bool, str]:
+    if name == PREVIEW_NAME or not target_enabled("wallpaper"):
+        return False, ""
+    command = wallgen_command()
+    if not command:
+        return False, ""
+    proc = subprocess.run(command + ["semantic", "apply", name, "--set"], text=True, capture_output=True)
+    message = (proc.stdout or proc.stderr or "").strip()
+    return proc.returncode == 0, message
+
+
 def _sync_noctalia(name: str) -> tuple[bool, str]:
     command = noctalia_command()
     if not command:
@@ -125,23 +148,17 @@ def _apply_waybar(theme: dict[str, Any], *, restart: bool) -> dict[str, Path]:
     return theme_waybar.apply(theme, restart=restart)
 
 
-def apply_studio_overrides(name: str, *, restart_waybar: bool = False,
-                           components: list[str] | None = None) -> dict[str, Any]:
-    """Apply only Studio-managed component layers after a legacy subcommand."""
+def apply_studio_overrides(name: str, *, restart_waybar: bool = False, components: list[str] | None = None) -> dict[str, Any]:
     theme = load_theme(name)
     component_result = apply_all(theme, components)
     waybar_paths = _apply_waybar(theme, restart=restart_waybar)
-    return {
-        "name": name,
-        "components": component_result,
-        "waybar": {k: str(v) for k, v in waybar_paths.items()},
-    }
+    return {"name": name, "components": component_result, "waybar": {k: str(v) for k, v in waybar_paths.items()}}
 
 
-def apply_theme(name: str, *, restart_waybar: bool = False,
-                components: list[str] | None = None) -> dict[str, Any]:
+def apply_theme(name: str, *, restart_waybar: bool = False, components: list[str] | None = None) -> dict[str, Any]:
     theme = load_theme(name)
     legacy_ok, legacy_message = _run_legacy(name)
+    wallpaper_ok, wallpaper_message = _sync_semantic_wallpaper(name)
     component_result = apply_all(theme, components)
     waybar_paths = _apply_waybar(theme, restart=restart_waybar)
     noctalia_ok, noctalia_message = _sync_noctalia(name)
@@ -151,6 +168,8 @@ def apply_theme(name: str, *, restart_waybar: bool = False,
         "name": name,
         "legacy_ok": legacy_ok,
         "legacy_message": legacy_message,
+        "wallpaper_ok": wallpaper_ok,
+        "wallpaper_message": wallpaper_message,
         "noctalia_ok": noctalia_ok,
         "noctalia_message": noctalia_message,
         "components": component_result,
