@@ -16,9 +16,11 @@ from theme_schema import dump_json, ensure_theme_schema, safe_theme_name
 import theme_waybar
 
 CFG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
 THEME_DIR = CFG / "hypr" / "themes"
 ACTIVE_FILE = CFG / "hypr" / "generated" / ".active"
 TARGETS_FILE = CFG / "theme-engine" / "targets.conf"
+RENDER_ROOT = CACHE / "theme-engine" / "wallpapers"
 PREVIEW_NAME = "_theme_studio_preview"
 
 
@@ -122,6 +124,31 @@ def _run_legacy(name: str) -> tuple[bool, str]:
     return proc.returncode == 0, message
 
 
+def _atomic_symlink(target: Path, link: Path) -> None:
+    """Atomically point *link* at *target*, replacing the previous link/file."""
+    target = target.expanduser().resolve()
+    link.parent.mkdir(parents=True, exist_ok=True)
+    temporary = link.with_name(f".{link.name}.{os.getpid()}.tmp")
+    temporary.unlink(missing_ok=True)
+    try:
+        os.symlink(str(target), temporary)
+        os.replace(temporary, link)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _publish_current_wallpaper(rendered: Path) -> tuple[Path, Path]:
+    """Publish stable links for consumers that should follow the active wallpaper."""
+    rendered = rendered.expanduser().resolve()
+    if not rendered.is_file():
+        raise OSError(f"rendered wallpaper does not exist: {rendered}")
+    current = RENDER_ROOT / "current.png"
+    homepage = CFG / "quickshell" / "homepage-images" / "theme-wallpaper.png"
+    _atomic_symlink(rendered, current)
+    _atomic_symlink(current, homepage)
+    return current, homepage
+
+
 def _sync_semantic_wallpaper(name: str) -> tuple[bool, str]:
     if name == PREVIEW_NAME or not target_enabled("wallpaper"):
         return False, ""
@@ -130,7 +157,15 @@ def _sync_semantic_wallpaper(name: str) -> tuple[bool, str]:
         return False, ""
     proc = subprocess.run(command + ["semantic", "apply", name, "--set"], text=True, capture_output=True)
     message = (proc.stdout or proc.stderr or "").strip()
-    return proc.returncode == 0, message
+    if proc.returncode != 0:
+        return False, message
+    if message:
+        rendered = Path(message.splitlines()[-1].strip())
+        try:
+            _publish_current_wallpaper(rendered)
+        except OSError as exc:
+            return False, f"{message}\ncurrent wallpaper link: {exc}"
+    return True, message
 
 
 def _sync_noctalia(name: str) -> tuple[bool, str]:
