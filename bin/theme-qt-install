@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Install the optional managed PySide6 runtime used by Qt Theme Studio.
+set -euo pipefail
+
+VENV="${THEME_STUDIO_QT_VENV:-$HOME/.local/share/theme-studio/qt-venv}"
+PYTHON="${PYTHON:-python3}"
+
+command -v "$PYTHON" >/dev/null 2>&1 || {
+    echo "theme qt-install: python3 was not found" >&2
+    exit 127
+}
+
+mkdir -p "$(dirname "$VENV")"
+if [ ! -x "$VENV/bin/python" ]; then
+    "$PYTHON" -m venv "$VENV"
+fi
+"$VENV/bin/python" -m pip install --upgrade pip
+"$VENV/bin/python" -m pip install 'PySide6>=6.8,<7'
+
+printf 'Qt Theme Studio runtime installed.\nRun: theme\n'

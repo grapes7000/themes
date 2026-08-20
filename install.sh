@@ -29,20 +29,18 @@ for arg in "$@"; do
 done
 
 mkdir -p "$CFG/hypr/themes" "$CFG/hypr/wallpapers" "$CFG/hypr/generated" "$HOME/.local/bin"
-cp "$REPO"/themes/*.json         "$CFG/hypr/themes/"
-cp "$REPO"/wallpapers/*.png      "$CFG/hypr/wallpapers/" 2>/dev/null || true
+cp "$REPO"/themes/*.json "$CFG/hypr/themes/"
+cp "$REPO"/wallpapers/*.png "$CFG/hypr/wallpapers/" 2>/dev/null || true
 STUDIO_TMP="$(mktemp -d)"
 trap 'rm -rf "$STUDIO_TMP"' EXIT
 bash "$REPO/tools/unpack-theme-studio.sh" "$STUDIO_TMP" >/dev/null
 
-# Theme Studio is the user-facing `theme` command. The previous stable engine is
-# retained as `theme-legacy` and receives every existing non-Studio command.
 install -m755 "$REPO/bin/theme" "$HOME/.local/bin/theme-legacy"
 install -m755 "$REPO/bin/theme-studio" "$HOME/.local/bin/theme"
-for t in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image; do
+for t in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image theme-qt-install; do
     install -m755 "$REPO/bin/$t" "$HOME/.local/bin/$t"
 done
-for module in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py; do
+for module in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py theme_qt_app.py theme_qt_bridge.py theme_qt_theme_engine.py; do
     install -m644 "$REPO/bin/$module" "$HOME/.local/bin/$module"
 done
 for module in theme_schema.py theme_preview.py theme_waybar.py theme_components.py theme_tui_widgets.py theme_tui.py; do
@@ -51,76 +49,47 @@ done
 mkdir -p "$HOME/.local/share/doc/theme-studio"
 install -m644 "$STUDIO_TMP/THEME-STUDIO.md" "$HOME/.local/share/doc/theme-studio/README.md"
 install -m644 "$STUDIO_TMP/Theme-Studio-TUI-Design-Plan.md" "$HOME/.local/share/doc/theme-studio/Design-Plan.md"
+QT_STUDIO_ROOT="$HOME/.local/share/theme-studio/qt"
+rm -rf "$QT_STUDIO_ROOT/qml"
+mkdir -p "$QT_STUDIO_ROOT"
+cp -R "$REPO/qt-theme-studio/qml" "$QT_STUDIO_ROOT/qml"
 
 has() { command -v "$1" >/dev/null 2>&1; }
-
-# Package name -> binary name, where they differ (pacman pkg "neovim" -> bin "nvim").
 pkg_bin() { case "$1" in neovim) echo nvim ;; *) echo "$1" ;; esac; }
 
-# Install whatever's missing among the tools this DE would enable, plus
-# zsh + oh-my-zsh (not DE-specific). Always confirms before touching the
-# system; never installs on a non-interactive run.
 maybe_install_packages() {
     local de="$1"
     local want=(kitty starship neovim zsh)
     [ "$de" = hyprland ] && want+=(waybar wofi dunst hyprlock eww)
-
     local missing=()
-    for pkg in "${want[@]}"; do
-        has "$(pkg_bin "$pkg")" || missing+=("$pkg")
-    done
+    for pkg in "${want[@]}"; do has "$(pkg_bin "$pkg")" || missing+=("$pkg"); done
     local need_omz=0
     [ -d "$HOME/.oh-my-zsh" ] || need_omz=1
-
     { [ ${#missing[@]} -eq 0 ] && [ "$need_omz" -eq 0 ]; } && return
-
     echo
     echo "Can install to fully match your terminal setup:"
     [ ${#missing[@]} -gt 0 ] && echo "  pacman:    ${missing[*]}"
     [ "$need_omz" -eq 1 ] && echo "  oh-my-zsh: via the official installer (ohmyzsh/ohmyzsh)"
-
-    if [ ! -t 0 ]; then
-        echo "Not an interactive terminal -- skipping. Re-run install.sh directly to install."
-        return
-    fi
+    if [ ! -t 0 ]; then echo "Not an interactive terminal -- skipping. Re-run install.sh directly to install."; return; fi
     read -rp "Install now? [y/N] " reply
     case "$reply" in
         y|Y|yes|YES)
-            if [ ${#missing[@]} -gt 0 ]; then
-                sudo pacman -S --needed "${missing[@]}" || echo "pacman install failed -- continuing anyway."
-            fi
-            if [ "$need_omz" -eq 1 ]; then
-                RUNZSH=no CHSH=no KEEP_ZSHRC=yes sh -c \
-                  "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" \
-                  "" --unattended \
-                  || echo "oh-my-zsh install failed -- continuing anyway."
-            fi
+            if [ ${#missing[@]} -gt 0 ]; then sudo pacman -S --needed "${missing[@]}" || echo "pacman install failed -- continuing anyway."; fi
+            if [ "$need_omz" -eq 1 ]; then RUNZSH=no CHSH=no KEEP_ZSHRC=yes sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || echo "oh-my-zsh install failed -- continuing anyway."; fi
             ;;
-        *)
-            echo "Skipped. Re-run install.sh anytime to retry."
-            ;;
+        *) echo "Skipped. Re-run install.sh anytime to retry." ;;
     esac
 }
 
-# Detect the running desktop so targets.conf only enables what's actually
-# usable on this machine -- a fresh clone on KDE should not default to
-# Hyprland-only targets (and vice versa).
 detect_de() {
-    if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || has hyprctl; then
-        echo hyprland
-    elif [ -n "${KDE_FULL_SESSION:-}" ] || [ "${XDG_CURRENT_DESKTOP:-}" = "KDE" ] || has plasmashell; then
-        echo kde
-    elif [ "${XDG_CURRENT_DESKTOP:-}" = "XFCE" ] || has xfce4-session; then
-        echo xfce
-    elif [ "${XDG_CURRENT_DESKTOP:-}" = "X-Cinnamon" ] || [ "${XDG_CURRENT_DESKTOP:-}" = "MATE" ] \
-         || [ "${XDG_CURRENT_DESKTOP:-}" = "GNOME" ] || has cinnamon-session || has mate-session || has gnome-shell; then
-        echo gtk-de
-    else
-        echo unknown
+    if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || has hyprctl; then echo hyprland
+    elif [ -n "${KDE_FULL_SESSION:-}" ] || [ "${XDG_CURRENT_DESKTOP:-}" = "KDE" ] || has plasmashell; then echo kde
+    elif [ "${XDG_CURRENT_DESKTOP:-}" = "XFCE" ] || has xfce4-session; then echo xfce
+    elif [ "${XDG_CURRENT_DESKTOP:-}" = "X-Cinnamon" ] || [ "${XDG_CURRENT_DESKTOP:-}" = "MATE" ] || [ "${XDG_CURRENT_DESKTOP:-}" = "GNOME" ] || has cinnamon-session || has mate-session || has gnome-shell; then echo gtk-de
+    else echo unknown
     fi
 }
 
-# emit "$1" uncommented if binary "$2" is on PATH, else commented out
 opt() { has "$2" && echo "$1" || echo "# $1"; }
 
 write_targets_conf() {
@@ -132,89 +101,15 @@ write_targets_conf() {
         echo "# Full option list & what each target does: docs/DE-THEMING.md"
         case "$de" in
             hyprland)
-                echo hypr
-                opt waybar waybar
-                opt kitty kitty
-                opt starship starship
-                opt nvim nvim
-                opt zsh zsh
-                opt wallpaper hyprpaper
-                opt wofi wofi
-                has wofi || opt rofi rofi
-                opt dunst dunst
-                opt hyprlock hyprlock
-                opt homepage eww
-                echo "# kde"
-                echo "# oomox"
-                echo "# gtk"
-                echo "# xfce"
-                ;;
+                echo hypr; opt waybar waybar; opt kitty kitty; opt starship starship; opt nvim nvim; opt zsh zsh; opt wallpaper hyprpaper; opt wofi wofi; has wofi || opt rofi rofi; opt dunst dunst; opt hyprlock hyprlock; opt homepage eww; echo "# kde"; echo "# oomox"; echo "# gtk"; echo "# xfce" ;;
             kde)
-                opt kitty kitty
-                opt starship starship
-                opt nvim nvim
-                opt zsh zsh
-                opt kde plasma-apply-colorscheme
-                echo "# hypr"
-                echo "# waybar"
-                echo "# wallpaper"
-                echo "# wofi"
-                echo "# rofi"
-                echo "# dunst"
-                echo "# hyprlock"
-                echo "# oomox"
-                echo "# gtk"
-                echo "# xfce"
-                ;;
+                opt kitty kitty; opt starship starship; opt nvim nvim; opt zsh zsh; opt kde plasma-apply-colorscheme; echo "# hypr"; echo "# waybar"; echo "# wallpaper"; echo "# wofi"; echo "# rofi"; echo "# dunst"; echo "# hyprlock"; echo "# oomox"; echo "# gtk"; echo "# xfce" ;;
             xfce)
-                opt kitty kitty
-                opt starship starship
-                opt nvim nvim
-                opt zsh zsh
-                echo xfce
-                if has oomox-cli; then echo oomox; else echo "# oomox"; echo gtk; fi
-                echo "# hypr"
-                echo "# waybar"
-                echo "# wallpaper"
-                echo "# wofi"
-                echo "# rofi"
-                echo "# dunst"
-                echo "# hyprlock"
-                echo "# kde"
-                ;;
+                opt kitty kitty; opt starship starship; opt nvim nvim; opt zsh zsh; echo xfce; if has oomox-cli; then echo oomox; else echo "# oomox"; echo gtk; fi; echo "# hypr"; echo "# waybar"; echo "# wallpaper"; echo "# wofi"; echo "# rofi"; echo "# dunst"; echo "# hyprlock"; echo "# kde" ;;
             gtk-de)
-                opt kitty kitty
-                opt starship starship
-                opt nvim nvim
-                opt zsh zsh
-                if has oomox-cli; then echo oomox; else echo "# oomox"; echo gtk; fi
-                echo "# hypr"
-                echo "# waybar"
-                echo "# wallpaper"
-                echo "# wofi"
-                echo "# rofi"
-                echo "# dunst"
-                echo "# hyprlock"
-                echo "# kde"
-                echo "# xfce"
-                ;;
+                opt kitty kitty; opt starship starship; opt nvim nvim; opt zsh zsh; if has oomox-cli; then echo oomox; else echo "# oomox"; echo gtk; fi; echo "# hypr"; echo "# waybar"; echo "# wallpaper"; echo "# wofi"; echo "# rofi"; echo "# dunst"; echo "# hyprlock"; echo "# kde"; echo "# xfce" ;;
             *)
-                opt kitty kitty
-                opt starship starship
-                opt nvim nvim
-                opt zsh zsh
-                echo "# hypr"
-                echo "# waybar"
-                echo "# wallpaper"
-                echo "# wofi"
-                echo "# rofi"
-                echo "# dunst"
-                echo "# hyprlock"
-                echo "# kde"
-                echo "# oomox"
-                echo "# gtk"
-                echo "# xfce"
-                ;;
+                opt kitty kitty; opt starship starship; opt nvim nvim; opt zsh zsh; echo "# hypr"; echo "# waybar"; echo "# wallpaper"; echo "# wofi"; echo "# rofi"; echo "# dunst"; echo "# hyprlock"; echo "# kde"; echo "# oomox"; echo "# gtk"; echo "# xfce" ;;
         esac
         echo "# obsidian=~/Documents/Obsidian Vault"
         echo "# firefox"
@@ -230,25 +125,16 @@ if [ ! -f "$CFG/theme-engine/targets.conf" ]; then
 fi
 
 echo "Installed $(ls "$REPO"/themes/*.json | wc -l) themes + Theme Studio + generators."
-if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    echo "~/.local/bin is not currently on PATH. Add it through your shell config or Chezmoi-managed dotfiles:"
-    echo '  export PATH="$HOME/.local/bin:$PATH"'
-fi
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then echo "~/.local/bin is not currently on PATH. Add it through your shell config or Chezmoi-managed dotfiles:"; echo '  export PATH="$HOME/.local/bin:$PATH"'; fi
 echo "The installer does not edit ~/.zshrc or ~/.bashrc. Open a shell where ~/.local/bin is on PATH, then run:"
 echo "  Open Theme Studio:     theme"
+echo "  Install Qt runtime:    theme qt-install"
+echo "  Force terminal UI:     theme tui"
 echo "  Apply desktop theme:   theme <name>"
 echo "  Validate current:      theme validate"
 echo "  Update Firefox:        theme-pywalfox <name>"
 echo "  Generate webpage CSS:  theme-stylus <name> --open"
 echo "  Theme from image:      theme-from-image <image> --name <name> --apply"
-if ! has wal; then
-    echo "Image themes need pywal16: pipx install 'pywal16[all]'"
-fi
+if ! has wal; then echo "Image themes need pywal16: pipx install 'pywal16[all]'"; fi
 echo "wallgen needs python-pillow:  sudo pacman -S python-pillow"
-if [ "$BUILD_APPIMAGE" -eq 1 ]; then
-    echo
-    echo "Building AppImage..."
-    "$REPO/packaging/build-appimage.sh"
-else
-    echo "Optional portable build: ./install.sh --build-appimage"
-fi
+if [ "$BUILD_APPIMAGE" -eq 1 ]; then echo; echo "Building AppImage..."; "$REPO/packaging/build-appimage.sh"; else echo "Optional portable build: ./install.sh --build-appimage"; fi
