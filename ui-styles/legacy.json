@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "name": "legacy",
+  "description": "Roomier rounded application style matching the earlier Qt app generation.",
+  "metrics": {
+    "grid": 4,
+    "spacing_xs": 4,
+    "spacing_sm": 8,
+    "spacing_md": 12,
+    "spacing_lg": 18,
+    "spacing_xl": 24,
+    "spacing_2xl": 32,
+    "spacing_3xl": 40,
+    "page_padding": 32,
+    "page_padding_compact": 24,
+    "section_gap": 28,
+    "control_height_compact": 30,
+    "control_height": 38,
+    "control_height_large": 44,
+    "sidebar_width": 220,
+    "icon_size": 16,
+    "icon_box": 20,
+    "radius_control": 9,
+    "radius_surface": 14,
+    "radius_overlay": 18,
+    "border_width": 1,
+    "focus_width": 2,
+    "font_caption": 11,
+    "font_secondary": 12,
+    "font_body": 14,
+    "font_section": 15,
+    "font_title": 24
+  },
+  "patterns": {
+    "surface": "card",
+    "section": "card",
+    "list_row": "card",
+    "selection": "filled",
+    "button": "filled",
+    "field": "filled-outlined",
+    "dialog": "rounded-card",
+    "status": "semantic-direct",
+    "shadow": "soft"
+  },
+  "rules": {
+    "allow_local_spacing": true,
+    "allow_local_radius": true,
+    "allow_local_font_size": true,
+    "allow_local_border_width": false,
+    "allow_nested_cards": true
+  }
+}
