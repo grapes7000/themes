@@ -1,5 +1,6 @@
 {
   "name": "graphite",
+  "ui_style": "precision",
   "roles": {
     "bg": "#18191B",
     "bg_alt": "#1D1E21",
