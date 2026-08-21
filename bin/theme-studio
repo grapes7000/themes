@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 import theme_runtime
+import theme_ui
 from theme_schema import validation_summary, validate_theme
 
 
@@ -30,6 +31,12 @@ Compatible commands:
   theme homepage ...        Existing homepage commands
   theme font ...            Existing font commands
   theme wallpaper ...       Semantic wallpaper template commands
+
+Application UI style:
+  theme ui                  Show the resolved UI style
+  theme ui --list           List available UI style profiles
+  theme ui <name>           Override application UI style
+  theme ui auto             Follow theme ui_style, else Precision
 
 Wallpaper templates:
   theme wallpaper                   Show active template
@@ -89,6 +96,24 @@ def wallpaper(args: list[str]) -> int:
     return 0
 
 
+def _active_theme_data() -> tuple[str | None, dict | None]:
+    name = theme_runtime.active_theme()
+    if not name:
+        return None, None
+    try:
+        return name, theme_runtime.load_theme(name)
+    except Exception:
+        return name, None
+
+
+def _publish_ui_style() -> None:
+    name, data = _active_theme_data()
+    try:
+        theme_ui.publish(data, name)
+    except Exception as exc:
+        print(f"theme: UI-style warning: {exc}", file=sys.stderr)
+
+
 def _enable_live_preview_by_default() -> None:
     """Make Theme Studio edits reach the desktop immediately.
 
@@ -129,13 +154,17 @@ def launch(name: str | None = None) -> int:
         _enable_live_preview_by_default()
         from theme_tui import launch as launch_tui
         launch_tui()
+        _publish_ui_style()
         return 0
     except KeyboardInterrupt:
         return 130
     except Exception as exc:
         print(f"theme: Theme Studio could not start: {exc}", file=sys.stderr)
         print("Falling back to the classic picker.", file=sys.stderr)
-        return run_legacy([])
+        code = run_legacy([])
+        if code == 0:
+            _publish_ui_style()
+        return code
 
 
 def validate(name: str | None) -> int:
@@ -174,6 +203,13 @@ def main() -> int:
         return run_legacy(args[1:])
     if args[0] == "wallpaper":
         return wallpaper(args[1:])
+    if args[0] == "ui":
+        name, data = _active_theme_data()
+        try:
+            return theme_ui.command(args[1:], data, name)
+        except Exception as exc:
+            print(f"theme ui: {exc}", file=sys.stderr)
+            return 1
 
     passthrough = {"shape", "texture", "anim", "effects", "homepage", "font", "starship", "-l", "--list"}
     if args[0] in passthrough or args[0].startswith("-"):
@@ -192,6 +228,10 @@ def main() -> int:
     except Exception as exc:
         print(f"theme: {exc}", file=sys.stderr)
         return 1
+    try:
+        theme_ui.publish(theme_runtime.load_theme(args[0]), args[0])
+    except Exception as exc:
+        print(f"theme: theme applied, but UI-style publish failed: {exc}", file=sys.stderr)
     if result.get("legacy_message"):
         print(result["legacy_message"])
     print(f"Theme Studio overrides applied: {args[0]}")
