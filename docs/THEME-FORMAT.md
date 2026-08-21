@@ -1,16 +1,22 @@
 # The `theme.json` format
 
-Every theme is a single JSON file in `themes/<name>.json` with four top-level
-keys: `name`, `dark`, `roles`, `style`.
+Every theme is a single JSON file in `themes/<name>.json` with four core top-level
+keys: `name`, `dark`, `roles`, `style`. A theme may also recommend an application
+UI grammar with the optional `ui_style` key.
 
 ```jsonc
 {
   "name": "catppuccin_mocha",
   "dark": true,
+  "ui_style": "precision",
   "roles":  { /* colors  */ },
-  "style":  { /* feel    */ }
+  "style":  { /* desktop feel */ }
 }
 ```
+
+`ui_style` does **not** change colors or compositor styling. It points to a named
+semantic UI profile from `ui-styles/` and is only followed while `theme ui auto`
+is active. See `docs/UI-STYLE-SPEC.md`.
 
 ---
 
@@ -40,7 +46,10 @@ kitty's palette.
 
 ---
 
-## `style` — the feel
+## `style` — the desktop feel
+
+This object controls compositor/window-shell presentation. It is intentionally
+separate from the application `ui_style` profile.
 
 | Key | Type | Meaning |
 |---|---|---|
@@ -75,6 +84,37 @@ kitty's palette.
 
 ---
 
+## `ui_style` — optional application grammar
+
+A theme can recommend one UI profile:
+
+```json
+"ui_style": "precision"
+```
+
+The installed profiles live in:
+
+```text
+~/.config/theme-engine/ui-styles/
+```
+
+The generated active profile lives in:
+
+```text
+~/.config/theme-engine/generated/ui-style.json
+```
+
+Resolution is:
+
+1. explicit `theme ui <profile>` override;
+2. the active theme's `ui_style` while `theme ui auto` is selected;
+3. `precision`.
+
+This makes color and geometry independently switchable while still allowing a
+palette to ship with a recommended visual grammar.
+
+---
+
 ## What gets generated
 
 ### Stable desktop contract
@@ -86,9 +126,12 @@ atomically, so readers never observe partial JSON.
 
 The object retains every top-level field from the selected theme definition.
 `name` identifies the selected theme, `roles` contains the complete resolved
-semantic role map, and `style` contains the style after active shape/texture
-profiles have been resolved. Consumers must ignore unknown fields and provide
-fallbacks for missing fields so the contract can evolve compatibly.
+semantic role map, and `style` contains the compositor/window style after active
+shape/texture profiles have been resolved. Consumers must ignore unknown fields
+and provide fallbacks for missing fields so the contract can evolve compatibly.
+
+The Theme Studio wrapper also publishes the independently resolved application
+UI contract at `~/.config/theme-engine/generated/ui-style.json`.
 
 When `lakota-hypr-theme` is installed, `theme` delegates Hyprland rendering and
 reload to that hyprland-setup adapter after publishing the contract. The legacy
@@ -107,6 +150,7 @@ Running `theme <name>` writes (never edit these by hand):
 - `~/.config/nvim/lua/generated_theme.lua` — a full Neovim colorscheme (base
   highlight groups + treesitter `@capture` links) built from the palette.
 - `~/.config/hypr/wallpapers/<name>.png` — via `wallgen`.
+- `~/.config/theme-engine/generated/ui-style.json` — resolved semantic application UI profile.
 
 The active theme name is recorded in
 `~/.config/hypr/generated/.active`.
@@ -115,7 +159,11 @@ The active theme name is recorded in
 
 ## Adding a new target app
 
-`bin/theme` is small Python. To theme another app, add a `gen_<app>(roles,
-style)` that writes its config from the roles/style, and call it from
-`apply()`. The pattern is: read `roles`/`style`, format the app's config
-syntax, `write()` it, then reload the app in `reload()`.
+Color consumers read `theme.json` semantic roles. Applications that support
+switchable visual grammar should additionally read `ui-style.json` through a
+single local adapter/singleton, then expose semantic metrics/components to QML.
+
+For color-only integrations, `bin/theme` can still add a `gen_<app>(roles,
+style)` that writes the app's config from the roles/style and calls it from
+`apply()`. The pattern is: read semantic values, format the app's config syntax,
+write it, then reload the app in `reload()`.
