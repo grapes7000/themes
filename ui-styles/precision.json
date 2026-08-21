@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "name": "precision",
+  "description": "Crisp native desktop utility style: compact, flat, restrained, and alignment-driven.",
+  "metrics": {
+    "grid": 4,
+    "spacing_xs": 4,
+    "spacing_sm": 8,
+    "spacing_md": 12,
+    "spacing_lg": 16,
+    "spacing_xl": 20,
+    "spacing_2xl": 24,
+    "spacing_3xl": 32,
+    "page_padding": 20,
+    "page_padding_compact": 16,
+    "section_gap": 20,
+    "control_height_compact": 24,
+    "control_height": 30,
+    "control_height_large": 36,
+    "sidebar_width": 190,
+    "icon_size": 14,
+    "icon_box": 16,
+    "radius_control": 3,
+    "radius_surface": 4,
+    "radius_overlay": 8,
+    "border_width": 1,
+    "focus_width": 1,
+    "font_caption": 11,
+    "font_secondary": 12,
+    "font_body": 13,
+    "font_section": 13,
+    "font_title": 16
+  },
+  "patterns": {
+    "surface": "flat",
+    "section": "divider",
+    "list_row": "flat",
+    "selection": "accent-soft-marker",
+    "button": "quiet",
+    "field": "outlined",
+    "dialog": "elevated",
+    "status": "semantic-muted",
+    "shadow": "overlay-only"
+  },
+  "rules": {
+    "allow_local_spacing": false,
+    "allow_local_radius": false,
+    "allow_local_font_size": false,
+    "allow_local_border_width": false,
+    "allow_nested_cards": false
+  }
+}
