@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "name": "win95",
+  "description": "Compact retro desktop grammar inspired by classic Windows 95 controls and information density.",
+  "metrics": {
+    "grid": 2,
+    "spacing_xs": 2,
+    "spacing_sm": 4,
+    "spacing_md": 6,
+    "spacing_lg": 8,
+    "spacing_xl": 12,
+    "spacing_2xl": 16,
+    "spacing_3xl": 24,
+    "page_padding": 12,
+    "page_padding_compact": 8,
+    "section_gap": 12,
+    "control_height_compact": 20,
+    "control_height": 24,
+    "control_height_large": 28,
+    "sidebar_width": 180,
+    "icon_size": 16,
+    "icon_box": 18,
+    "radius_control": 0,
+    "radius_surface": 0,
+    "radius_overlay": 0,
+    "border_width": 1,
+    "focus_width": 1,
+    "font_caption": 10,
+    "font_secondary": 11,
+    "font_body": 12,
+    "font_section": 12,
+    "font_title": 14
+  },
+  "patterns": {
+    "surface": "bevel",
+    "section": "group",
+    "list_row": "flat",
+    "selection": "solid-accent",
+    "button": "bevel",
+    "field": "sunken",
+    "dialog": "framed",
+    "status": "semantic-direct",
+    "shadow": "hard"
+  },
+  "rules": {
+    "allow_local_spacing": false,
+    "allow_local_radius": false,
+    "allow_local_font_size": false,
+    "allow_local_border_width": false,
+    "allow_nested_cards": false
+  }
+}
