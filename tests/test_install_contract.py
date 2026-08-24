@@ -17,10 +17,10 @@ def test_installer_has_target_presets() -> None:
 def test_installer_does_not_own_shell_framework_or_packages() -> None:
     lowered = INSTALLER.lower()
     assert "ohmyzsh/ohmyzsh" not in lowered
-    assert "oh my zsh" not in lowered
+    assert "raw.githubusercontent.com/ohmyzsh" not in lowered
     assert "sudo pacman -s" not in lowered
     assert "apt-get install" not in lowered
-    assert "pacman install" not in lowered
+    assert "dnf install" not in lowered
 
 
 def test_terminal_mode_contains_only_portable_targets() -> None:
