@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Install the theme engine: themes + wallpapers into ~/.config/hypr,
-# generators into ~/.local/bin. Re-runnable.
+# Install the standalone theme engine. Software/package installation belongs to
+# linux-setup (or the user's distro); this script only installs theme assets and
+# chooses generators that are usable on the current machine.
 set -euo pipefail
 
 _src="${BASH_SOURCE[0]-}"
@@ -16,27 +17,45 @@ fi
 REPO="$(cd "$(dirname "$_src")" && pwd)"
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
 BUILD_APPIMAGE=0
+TARGET_MODE=auto
 
-for arg in "$@"; do
-    case "$arg" in
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         --build-appimage) BUILD_APPIMAGE=1 ;;
+        --targets)
+            shift
+            TARGET_MODE="${1:-}"
+            case "$TARGET_MODE" in auto|terminal|full) ;; *) echo "--targets must be auto, terminal, or full" >&2; exit 2 ;; esac
+            ;;
+        --targets=*)
+            TARGET_MODE="${1#*=}"
+            case "$TARGET_MODE" in auto|terminal|full) ;; *) echo "--targets must be auto, terminal, or full" >&2; exit 2 ;; esac
+            ;;
         -h|--help)
-            echo "Usage: ./install.sh [--build-appimage]"
-            echo "Installs Theme Engine. --build-appimage also creates a portable AppImage."
-            exit 0 ;;
-        *) echo "Unknown option: $arg" >&2; exit 2 ;;
+            cat <<'EOF'
+Usage: ./install.sh [--targets auto|terminal|full] [--build-appimage]
+
+  auto      detect the desktop and enable only usable generators (default)
+  terminal  enable only portable terminal/editor generators that are installed
+  full      enable the full Hyprland-oriented target set
+
+This installer does not install distro packages or shell frameworks.
+EOF
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
+    shift
 done
 
 mkdir -p "$CFG/hypr/themes" "$CFG/hypr/wallpapers" "$CFG/hypr/generated" "$HOME/.local/bin"
-cp "$REPO"/themes/*.json         "$CFG/hypr/themes/"
-cp "$REPO"/wallpapers/*.png      "$CFG/hypr/wallpapers/" 2>/dev/null || true
+cp "$REPO"/themes/*.json "$CFG/hypr/themes/"
+cp "$REPO"/wallpapers/*.png "$CFG/hypr/wallpapers/" 2>/dev/null || true
+
 STUDIO_TMP="$(mktemp -d)"
 trap 'rm -rf "$STUDIO_TMP"' EXIT
 bash "$REPO/tools/unpack-theme-studio.sh" "$STUDIO_TMP" >/dev/null
 
-# Theme Studio is the user-facing `theme` command. The previous stable engine is
-# retained as `theme-legacy` and receives every existing non-Studio command.
 install -m755 "$REPO/bin/theme" "$HOME/.local/bin/theme-legacy"
 install -m755 "$REPO/bin/theme-studio" "$HOME/.local/bin/theme"
 for t in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image; do
@@ -53,58 +72,8 @@ install -m644 "$STUDIO_TMP/THEME-STUDIO.md" "$HOME/.local/share/doc/theme-studio
 install -m644 "$STUDIO_TMP/Theme-Studio-TUI-Design-Plan.md" "$HOME/.local/share/doc/theme-studio/Design-Plan.md"
 
 has() { command -v "$1" >/dev/null 2>&1; }
+opt() { has "$2" && echo "$1" || echo "# $1"; }
 
-# Package name -> binary name, where they differ (pacman pkg "neovim" -> bin "nvim").
-pkg_bin() { case "$1" in neovim) echo nvim ;; *) echo "$1" ;; esac; }
-
-# Install whatever's missing among the tools this DE would enable, plus
-# zsh + oh-my-zsh (not DE-specific). Always confirms before touching the
-# system; never installs on a non-interactive run.
-maybe_install_packages() {
-    local de="$1"
-    local want=(kitty starship neovim zsh)
-    [ "$de" = hyprland ] && want+=(waybar wofi dunst hyprlock eww)
-
-    local missing=()
-    for pkg in "${want[@]}"; do
-        has "$(pkg_bin "$pkg")" || missing+=("$pkg")
-    done
-    local need_omz=0
-    [ -d "$HOME/.oh-my-zsh" ] || need_omz=1
-
-    { [ ${#missing[@]} -eq 0 ] && [ "$need_omz" -eq 0 ]; } && return
-
-    echo
-    echo "Can install to fully match your terminal setup:"
-    [ ${#missing[@]} -gt 0 ] && echo "  pacman:    ${missing[*]}"
-    [ "$need_omz" -eq 1 ] && echo "  oh-my-zsh: via the official installer (ohmyzsh/ohmyzsh)"
-
-    if [ ! -t 0 ]; then
-        echo "Not an interactive terminal -- skipping. Re-run install.sh directly to install."
-        return
-    fi
-    read -rp "Install now? [y/N] " reply
-    case "$reply" in
-        y|Y|yes|YES)
-            if [ ${#missing[@]} -gt 0 ]; then
-                sudo pacman -S --needed "${missing[@]}" || echo "pacman install failed -- continuing anyway."
-            fi
-            if [ "$need_omz" -eq 1 ]; then
-                RUNZSH=no CHSH=no KEEP_ZSHRC=yes sh -c \
-                  "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" \
-                  "" --unattended \
-                  || echo "oh-my-zsh install failed -- continuing anyway."
-            fi
-            ;;
-        *)
-            echo "Skipped. Re-run install.sh anytime to retry."
-            ;;
-    esac
-}
-
-# Detect the running desktop so targets.conf only enables what's actually
-# usable on this machine -- a fresh clone on KDE should not default to
-# Hyprland-only targets (and vice versa).
 detect_de() {
     if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || has hyprctl; then
         echo hyprland
@@ -120,100 +89,69 @@ detect_de() {
     fi
 }
 
-# emit "$1" uncommented if binary "$2" is on PATH, else commented out
-opt() { has "$2" && echo "$1" || echo "# $1"; }
+emit_terminal_targets() {
+    opt kitty kitty
+    opt starship starship
+    opt nvim nvim
+    opt zsh zsh
+}
 
 write_targets_conf() {
-    local de="$1" out="$CFG/theme-engine/targets.conf"
+    local mode="$1" de="$2" out="$CFG/theme-engine/targets.conf"
     {
         echo "# Enabled theme targets (one per line). Comment out to disable."
-        echo "# Auto-picked at install for detected desktop: $de."
-        echo "# Edit freely -- install.sh won't touch this file again once it exists."
-        echo "# Full option list & what each target does: docs/DE-THEMING.md"
-        case "$de" in
-            hyprland)
+        echo "# Generated by themes/install.sh --targets $mode (detected desktop: $de)."
+        echo "# Edit freely -- install.sh will not overwrite an existing file."
+        echo "# Package/software ownership belongs to linux-setup or your distro."
+        case "$mode" in
+            terminal)
+                emit_terminal_targets
+                ;;
+            full)
                 echo hypr
-                opt waybar waybar
-                opt kitty kitty
-                opt starship starship
-                opt nvim nvim
-                opt zsh zsh
-                opt wallpaper hyprpaper
-                opt wofi wofi
-                has wofi || opt rofi rofi
-                opt dunst dunst
-                opt hyprlock hyprlock
+                echo waybar
+                emit_terminal_targets
+                echo wallpaper
+                echo wofi
+                echo rofi
+                echo dunst
+                echo hyprlock
                 opt homepage eww
-                echo "# kde"
-                echo "# oomox"
-                echo "# gtk"
-                echo "# xfce"
                 ;;
-            kde)
-                opt kitty kitty
-                opt starship starship
-                opt nvim nvim
-                opt zsh zsh
-                opt kde plasma-apply-colorscheme
-                echo "# hypr"
-                echo "# waybar"
-                echo "# wallpaper"
-                echo "# wofi"
-                echo "# rofi"
-                echo "# dunst"
-                echo "# hyprlock"
-                echo "# oomox"
-                echo "# gtk"
-                echo "# xfce"
-                ;;
-            xfce)
-                opt kitty kitty
-                opt starship starship
-                opt nvim nvim
-                opt zsh zsh
-                echo xfce
-                if has oomox-cli; then echo oomox; else echo "# oomox"; echo gtk; fi
-                echo "# hypr"
-                echo "# waybar"
-                echo "# wallpaper"
-                echo "# wofi"
-                echo "# rofi"
-                echo "# dunst"
-                echo "# hyprlock"
-                echo "# kde"
-                ;;
-            gtk-de)
-                opt kitty kitty
-                opt starship starship
-                opt nvim nvim
-                opt zsh zsh
-                if has oomox-cli; then echo oomox; else echo "# oomox"; echo gtk; fi
-                echo "# hypr"
-                echo "# waybar"
-                echo "# wallpaper"
-                echo "# wofi"
-                echo "# rofi"
-                echo "# dunst"
-                echo "# hyprlock"
-                echo "# kde"
-                echo "# xfce"
-                ;;
-            *)
-                opt kitty kitty
-                opt starship starship
-                opt nvim nvim
-                opt zsh zsh
-                echo "# hypr"
-                echo "# waybar"
-                echo "# wallpaper"
-                echo "# wofi"
-                echo "# rofi"
-                echo "# dunst"
-                echo "# hyprlock"
-                echo "# kde"
-                echo "# oomox"
-                echo "# gtk"
-                echo "# xfce"
+            auto)
+                case "$de" in
+                    hyprland)
+                        echo hypr
+                        opt waybar waybar
+                        emit_terminal_targets
+                        opt wallpaper hyprpaper
+                        opt wofi wofi
+                        has wofi || opt rofi rofi
+                        opt dunst dunst
+                        opt hyprlock hyprlock
+                        opt homepage eww
+                        echo "# kde"
+                        echo "# oomox"
+                        echo "# gtk"
+                        echo "# xfce"
+                        ;;
+                    kde)
+                        emit_terminal_targets
+                        opt kde plasma-apply-colorscheme
+                        ;;
+                    xfce)
+                        emit_terminal_targets
+                        echo xfce
+                        if has oomox-cli; then echo oomox; else echo "# oomox"; echo gtk; fi
+                        ;;
+                    gtk-de)
+                        emit_terminal_targets
+                        if has oomox-cli; then echo oomox; else echo "# oomox"; echo gtk; fi
+                        ;;
+                    *)
+                        emit_terminal_targets
+                        ;;
+                esac
                 ;;
         esac
         echo "# obsidian=~/Documents/Obsidian Vault"
@@ -224,30 +162,22 @@ write_targets_conf() {
 mkdir -p "$CFG/theme-engine"
 if [ ! -f "$CFG/theme-engine/targets.conf" ]; then
     de="$(detect_de)"
-    maybe_install_packages "$de"
-    write_targets_conf "$de"
-    echo "Detected desktop: $de -- wrote $CFG/theme-engine/targets.conf (edit anytime)."
+    write_targets_conf "$TARGET_MODE" "$de"
+    echo "Wrote $CFG/theme-engine/targets.conf (mode: $TARGET_MODE, detected: $de)."
+else
+    echo "Keeping existing $CFG/theme-engine/targets.conf."
 fi
 
 echo "Installed $(ls "$REPO"/themes/*.json | wc -l) themes + Theme Studio + generators."
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    echo "~/.local/bin is not currently on PATH. Add it through your shell config or Chezmoi-managed dotfiles:"
-    echo '  export PATH="$HOME/.local/bin:$PATH"'
+    echo "~/.local/bin is not currently on PATH; add it through your shell config/dotfiles."
 fi
-echo "The installer does not edit ~/.zshrc or ~/.bashrc. Open a shell where ~/.local/bin is on PATH, then run:"
-echo "  Open Theme Studio:     theme"
-echo "  Apply desktop theme:   theme <name>"
-echo "  Validate current:      theme validate"
-echo "  Update Firefox:        theme-pywalfox <name>"
-echo "  Generate webpage CSS:  theme-stylus <name> --open"
-echo "  Theme from image:      theme-from-image <image> --name <name> --apply"
-if ! has wal; then
-    echo "Image themes need pywal16: pipx install 'pywal16[all]'"
-fi
-echo "wallgen needs python-pillow:  sudo pacman -S python-pillow"
+echo "This installer does not edit shell rc files and does not install packages or Oh My Zsh."
+echo "Open Theme Studio: theme"
+echo "Apply a theme:      theme <name>"
+echo "Validate current:   theme validate"
+
 if [ "$BUILD_APPIMAGE" -eq 1 ]; then
-    echo
-    echo "Building AppImage..."
     "$REPO/packaging/build-appimage.sh"
 else
     echo "Optional portable build: ./install.sh --build-appimage"
