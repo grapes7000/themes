@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "terminal-green",
+  "description": "Modern black desktop with subdued phosphor green terminal energy and almost no decorative color.",
+  "dark": true,
+  "roles": {
+    "bg": "#07100A", "bg_alt": "#0A140D", "surface_0": "#0D1710", "surface_1": "#111B14", "surface_2": "#17231A", "overlay": "#1A291E", "hover": "#223128", "selected": "#8FBF72",
+    "text": "#D8E1D4", "text_dim": "#7D8B7A", "focus": "#8FBF72", "border_normal": "#304035", "border_subtle": "#233028", "border_strong": "#8FBF72",
+    "accent": "#8FBF72", "accent2": "#5F8D68", "urgent": "#B45D5D", "success": "#8FBF72", "warning": "#B2A069", "info": "#6F9C7B", "disabled": "#526055",
+    "selection_bg": "#29422D", "selection_fg": "#E6EEE2", "sel_bg": "#29422D", "sel_fg": "#E6EEE2",
+    "ansi_black": "#0B100C", "ansi_red": "#A95F5F", "ansi_green": "#8FBF72", "ansi_yellow": "#B2A069", "ansi_blue": "#6E8792", "ansi_magenta": "#847488", "ansi_cyan": "#6F9C7B", "ansi_white": "#C8D0C5",
+    "ansi_br_black": "#566158", "ansi_br_red": "#C27575", "ansi_br_green": "#A8D48D", "ansi_br_yellow": "#CCB982", "ansi_br_blue": "#849CA7", "ansi_br_magenta": "#9A899E", "ansi_br_cyan": "#89B692", "ansi_br_white": "#EEF4EB"
+  },
+  "style": {"corner_radius": 3, "rounding_power": 1.5, "opacity": 0.99, "opacity_inactive": 0.96, "surface_opacity": 0.99, "inactive_dim": 0.02, "blur_on": false, "blur_strength": 4, "blur_passes": 1, "shadow_on": true, "shadow_radius": 8, "shadow_render_power": 3, "shadow_opacity": 0.28, "shadow_color": "#000000", "shadow_offset": "0 5", "gaps": 7, "window_gap": 7, "bar_padding": 6, "border_width": 1, "bar_height": 44, "animation_ms": 100, "animation_profile": "smooth", "workspace_animation": "slide", "motion_scale": 1.0}
+}
