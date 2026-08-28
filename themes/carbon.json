@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "carbon",
+  "description": "Industrial black, gunmetal and graphite with amber and cold-cyan terminal instrumentation.",
+  "dark": true,
+  "roles": {
+    "bg": "#08090A", "bg_alt": "#0D0F11", "surface_0": "#111315", "surface_1": "#15181B", "surface_2": "#1D2125", "overlay": "#24292E", "hover": "#2C3238", "selected": "#C58A3A",
+    "text": "#E8E8E6", "text_dim": "#85898D", "focus": "#C58A3A", "border_normal": "#34393E", "border_subtle": "#262A2E", "border_strong": "#C58A3A",
+    "accent": "#C58A3A", "accent2": "#4E94A8", "urgent": "#B94F4F", "success": "#6F8E69", "warning": "#C58A3A", "info": "#4E94A8", "disabled": "#5E6265",
+    "selection_bg": "#4B3820", "selection_fg": "#F3EFE8", "sel_bg": "#4B3820", "sel_fg": "#F3EFE8",
+    "ansi_black": "#111214", "ansi_red": "#B94F4F", "ansi_green": "#6F8E69", "ansi_yellow": "#C58A3A", "ansi_blue": "#5F7894", "ansi_magenta": "#846D8D", "ansi_cyan": "#4E94A8", "ansi_white": "#C9C9C6",
+    "ansi_br_black": "#5B6065", "ansi_br_red": "#D46666", "ansi_br_green": "#88A582", "ansi_br_yellow": "#E0A552", "ansi_br_blue": "#7790AC", "ansi_br_magenta": "#9E88A7", "ansi_br_cyan": "#69AFC2", "ansi_br_white": "#F5F5F2"
+  },
+  "style": {"corner_radius": 4, "rounding_power": 1.6, "opacity": 0.99, "opacity_inactive": 0.95, "surface_opacity": 0.99, "inactive_dim": 0.02, "blur_on": false, "blur_strength": 4, "blur_passes": 1, "shadow_on": true, "shadow_radius": 12, "shadow_render_power": 3, "shadow_opacity": 0.42, "shadow_color": "#000000", "shadow_offset": "0 5", "gaps": 6, "window_gap": 6, "bar_padding": 6, "border_width": 1, "bar_height": 44, "animation_ms": 110, "animation_profile": "smooth", "workspace_animation": "slide", "motion_scale": 1.0}
+}
