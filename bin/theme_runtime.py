@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -118,7 +119,7 @@ def cleanup_preview() -> None:
 def _run_legacy(name: str) -> tuple[bool, str]:
     command = legacy_command()
     if not command:
-        return False, "legacy generator not found; applied Studio-managed components only"
+        return False, "legacy generator not found"
     proc = subprocess.run(command + [name], text=True, capture_output=True)
     message = (proc.stdout or proc.stderr or "").strip()
     return proc.returncode == 0, message
@@ -152,6 +153,9 @@ def _publish_current_wallpaper(rendered: Path) -> tuple[Path, Path]:
 def _sync_semantic_wallpaper(name: str) -> tuple[bool, str]:
     if name == PREVIEW_NAME or not target_enabled("wallpaper"):
         return False, ""
+    static = CFG / "hypr" / "wallpapers" / f"{name}.png"
+    if static.is_file():
+        return False, "static wallpaper selected"
     command = wallgen_command()
     if not command:
         return False, ""
@@ -166,6 +170,133 @@ def _sync_semantic_wallpaper(name: str) -> tuple[bool, str]:
         except OSError as exc:
             return False, f"{message}\ncurrent wallpaper link: {exc}"
     return True, message
+
+
+def _reload_hyprland() -> tuple[bool, str]:
+    """Reload the final generated Hyprland config and stop hiding failures."""
+    if not target_enabled("hypr"):
+        return False, ""
+    hyprctl = shutil.which("hyprctl")
+    if not hyprctl:
+        return False, "hyprctl not found"
+    if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return False, "not in a Hyprland session"
+    proc = subprocess.run([hyprctl, "reload"], text=True, capture_output=True)
+    message = (proc.stdout or proc.stderr or "").strip()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Hyprland reload failed: {message or f'exit {proc.returncode}'}")
+    return True, message
+
+
+def _apply_static_wallpaper(name: str) -> tuple[bool, str]:
+    """Switch a matching theme wallpaper in the already-running hyprpaper."""
+    if name == PREVIEW_NAME or not target_enabled("wallpaper"):
+        return False, ""
+    path = (CFG / "hypr" / "wallpapers" / f"{name}.png").expanduser()
+    if not path.is_file():
+        return False, ""
+    hyprctl = shutil.which("hyprctl")
+    if not hyprctl or not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return False, ""
+    subprocess.run([hyprctl, "hyprpaper", "preload", str(path)], text=True, capture_output=True)
+    proc = subprocess.run([hyprctl, "hyprpaper", "wallpaper", f",{path}"], text=True, capture_output=True)
+    message = (proc.stdout or proc.stderr or "").strip()
+    if proc.returncode != 0:
+        raise RuntimeError(f"hyprpaper live switch failed: {message or f'exit {proc.returncode}'}")
+    _publish_current_wallpaper(path)
+    return True, message or str(path)
+
+
+def _starship_color(key: str, roles: dict[str, Any]) -> str:
+    """Map common palette names onto the active theme roles."""
+    k = key.lower()
+    exact = {
+        "bg": roles.get("bg_alt", roles["bg"]),
+        "background": roles["bg"],
+        "fg": roles["text"],
+        "foreground": roles["text"],
+        "accent": roles["accent"],
+        "accent2": roles.get("accent2", roles["accent"]),
+        "edge": roles.get("text_dim", roles["text"]),
+        "urgent": roles.get("urgent", roles["accent"]),
+    }
+    if k in exact:
+        return exact[k]
+
+    def has(*words: str) -> bool:
+        return any(word in k for word in words)
+
+    if has("deep", "dark", "back", "base", "night"):
+        return roles.get("bg_alt", roles["bg"])
+    if has("text", "white", "cream", "snow"):
+        return roles["text"]
+    if has("grey", "gray", "dim", "muted", "subtle"):
+        return roles.get("text_dim", roles["text"])
+    if has("red", "hot", "crimson", "error", "urgent", "danger"):
+        return roles.get("urgent", roles["accent"])
+    if has("lime", "green", "mint"):
+        return roles.get("ansi_green", roles.get("accent2", roles["accent"]))
+    if has("yellow", "gold", "butter", "amber", "sand", "orange", "peach"):
+        return roles.get("ansi_yellow", roles["accent"])
+    if has("cyan", "teal", "foam", "aqua"):
+        return roles.get("ansi_cyan", roles.get("accent2", roles["accent"]))
+    if has("blue", "azure", "sky", "ocean"):
+        return roles.get("ansi_blue", roles.get("accent2", roles["accent"]))
+    if has("pink", "magenta", "rose", "mauve", "blush"):
+        return roles.get("ansi_magenta", roles["accent"])
+    if has("purple", "violet", "lavender", "lilac", "grape"):
+        return roles["accent"]
+    return roles["accent"]
+
+
+def _sync_starship_runtime(theme: dict[str, Any]) -> tuple[bool, str]:
+    """Recolor the Starship file the current shell actually reads."""
+    configured = os.environ.get("STARSHIP_CONFIG")
+    if not configured or not target_enabled("starship"):
+        return False, ""
+    target = Path(configured).expanduser()
+    default = CFG / "starship.toml"
+    try:
+        if target.resolve() == default.resolve():
+            return False, ""
+    except OSError:
+        pass
+
+    if not target.exists():
+        if default.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(default, target)
+            return True, str(target)
+        return False, ""
+
+    roles = theme.get("roles", {})
+    if not roles:
+        return False, ""
+
+    text = target.read_text(encoding="utf-8")
+    out: list[str] = []
+    in_palette = False
+    changed = False
+    pattern = re.compile(r'^(\s*)([A-Za-z0-9_-]+)(\s*=\s*)["\']#?[0-9A-Fa-f]{6}["\'](.*)$')
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[palettes."):
+            in_palette = True
+        elif stripped.startswith("[") and not stripped.startswith("[palettes."):
+            in_palette = False
+
+        if in_palette:
+            match = pattern.match(line)
+            if match:
+                color = _starship_color(match.group(2), roles)
+                line = f'{match.group(1)}{match.group(2)}{match.group(3)}"{color}"{match.group(4)}'
+                changed = True
+        out.append(line)
+
+    if changed:
+        target.write_text("\n".join(out) + "\n", encoding="utf-8")
+        return True, str(target)
+    return False, "no Starship palette block found"
 
 
 def _sync_noctalia(name: str) -> tuple[bool, str]:
@@ -187,24 +318,49 @@ def apply_studio_overrides(name: str, *, restart_waybar: bool = False, component
     theme = load_theme(name)
     component_result = apply_all(theme, components)
     waybar_paths = _apply_waybar(theme, restart=restart_waybar)
-    return {"name": name, "components": component_result, "waybar": {k: str(v) for k, v in waybar_paths.items()}}
+    hypr_ok, hypr_message = _reload_hyprland()
+    wallpaper_ok, wallpaper_message = _apply_static_wallpaper(name)
+    starship_ok, starship_message = _sync_starship_runtime(theme)
+    return {
+        "name": name,
+        "components": component_result,
+        "waybar": {k: str(v) for k, v in waybar_paths.items()},
+        "hyprland_ok": hypr_ok,
+        "hyprland_message": hypr_message,
+        "wallpaper_ok": wallpaper_ok,
+        "wallpaper_message": wallpaper_message,
+        "starship_ok": starship_ok,
+        "starship_message": starship_message,
+    }
 
 
 def apply_theme(name: str, *, restart_waybar: bool = False, components: list[str] | None = None) -> dict[str, Any]:
     theme = load_theme(name)
     legacy_ok, legacy_message = _run_legacy(name)
-    wallpaper_ok, wallpaper_message = _sync_semantic_wallpaper(name)
+    if not legacy_ok:
+        raise RuntimeError(f"legacy theme generator failed for {name}: {legacy_message or 'no error output'}")
+
+    semantic_ok, semantic_message = _sync_semantic_wallpaper(name)
     component_result = apply_all(theme, components)
     waybar_paths = _apply_waybar(theme, restart=restart_waybar)
     noctalia_ok, noctalia_message = _sync_noctalia(name)
+
+    hypr_ok, hypr_message = _reload_hyprland()
+    static_wallpaper_ok, static_wallpaper_message = _apply_static_wallpaper(name)
+    starship_ok, starship_message = _sync_starship_runtime(theme)
+
     ACTIVE_FILE.parent.mkdir(parents=True, exist_ok=True)
     ACTIVE_FILE.write_text(name + "\n", encoding="utf-8")
     return {
         "name": name,
         "legacy_ok": legacy_ok,
         "legacy_message": legacy_message,
-        "wallpaper_ok": wallpaper_ok,
-        "wallpaper_message": wallpaper_message,
+        "wallpaper_ok": static_wallpaper_ok or semantic_ok,
+        "wallpaper_message": static_wallpaper_message or semantic_message,
+        "hyprland_ok": hypr_ok,
+        "hyprland_message": hypr_message,
+        "starship_ok": starship_ok,
+        "starship_message": starship_message,
         "noctalia_ok": noctalia_ok,
         "noctalia_message": noctalia_message,
         "components": component_result,
