@@ -22,4 +22,26 @@ for required in theme_schema.py theme_preview.py theme_waybar.py theme_component
   [[ -e "$DEST/$required" ]] || { echo "Missing extracted file: $required" >&2; exit 1; }
 done
 
+# The bundled Theme Studio predates the standalone engine's prompt-ownership
+# rule. Its generic apply_all() includes the `prompt` plugin, which rewrites
+# ~/.config/theme-engine/generated/starship.toml after the canonical
+# theme_starship renderer has already produced the user's prompt. That made a
+# normal `theme <name>` change prompt geometry, separators and OS visibility.
+#
+# A color/theme switch must preserve Starship structure. Prompt rendering stays
+# available when a caller explicitly asks for the `prompt` component; it is
+# simply excluded from an implicit "apply every component" operation.
+python3 - "$DEST/theme_components.py" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = '    selected = names or list(PLUGINS)\n'
+new = '    selected = names if names is not None else [name for name in PLUGINS if name != "prompt"]\n'
+if old not in text:
+    raise SystemExit("Theme Studio compatibility patch failed: apply_all selector was not found")
+path.write_text(text.replace(old, new, 1), encoding="utf-8")
+PY
+
 echo "Theme Studio source unpacked to: $DEST"
