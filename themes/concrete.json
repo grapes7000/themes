@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "concrete",
+  "description": "Brutalist concrete greys with hard geometry, rust accents and muted sage instrumentation.",
+  "dark": true,
+  "roles": {
+    "bg": "#262828", "bg_alt": "#2C2E2E", "surface_0": "#323434", "surface_1": "#393B3B", "surface_2": "#464848", "overlay": "#505252", "hover": "#595B5B", "selected": "#A66A4A",
+    "text": "#E3E1DC", "text_dim": "#AAA7A0", "focus": "#A66A4A", "border_normal": "#636363", "border_subtle": "#4C4E4E", "border_strong": "#A66A4A",
+    "accent": "#A66A4A", "accent2": "#7A8173", "urgent": "#A85050", "success": "#78836F", "warning": "#AF8D5E", "info": "#7A8173", "disabled": "#777773",
+    "selection_bg": "#5B4033", "selection_fg": "#EEEAE2", "sel_bg": "#5B4033", "sel_fg": "#EEEAE2",
+    "ansi_black": "#1E2020", "ansi_red": "#A85050", "ansi_green": "#78836F", "ansi_yellow": "#AF8D5E", "ansi_blue": "#6D7B84", "ansi_magenta": "#81717B", "ansi_cyan": "#7A8173", "ansi_white": "#CFCDC7",
+    "ansi_br_black": "#6A6B69", "ansi_br_red": "#C06A6A", "ansi_br_green": "#909B86", "ansi_br_yellow": "#C6A273", "ansi_br_blue": "#84929B", "ansi_br_magenta": "#98878F", "ansi_br_cyan": "#939A8B", "ansi_br_white": "#F2F0EB"
+  },
+  "style": {"corner_radius": 2, "rounding_power": 1.2, "opacity": 1.0, "opacity_inactive": 0.97, "surface_opacity": 1.0, "inactive_dim": 0.02, "blur_on": false, "blur_strength": 4, "blur_passes": 1, "shadow_on": true, "shadow_radius": 8, "shadow_render_power": 3, "shadow_opacity": 0.24, "shadow_color": "#000000", "shadow_offset": "0 3", "gaps": 6, "window_gap": 6, "bar_padding": 5, "border_width": 1, "bar_height": 43, "animation_ms": 90, "animation_profile": "smooth", "workspace_animation": "slide", "motion_scale": 1.0}
+}
