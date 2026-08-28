@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "ibm-ish",
+  "description": "Structured navy-black workstation theme with disciplined blue, cyan and tiny red status accents.",
+  "dark": true,
+  "roles": {
+    "bg": "#07131F", "bg_alt": "#091827", "surface_0": "#0C1B2A", "surface_1": "#102235", "surface_2": "#162C42", "overlay": "#1B334A", "hover": "#203A53", "selected": "#4E8FE7",
+    "text": "#E8EEF5", "text_dim": "#8797A8", "focus": "#4E8FE7", "border_normal": "#29435C", "border_subtle": "#1D344A", "border_strong": "#4E8FE7",
+    "accent": "#4E8FE7", "accent2": "#6FAFC7", "urgent": "#C95E62", "success": "#6E9A80", "warning": "#B89B63", "info": "#6FAFC7", "disabled": "#55677A",
+    "selection_bg": "#183A61", "selection_fg": "#EEF5FC", "sel_bg": "#183A61", "sel_fg": "#EEF5FC",
+    "ansi_black": "#09131E", "ansi_red": "#C95E62", "ansi_green": "#6E9A80", "ansi_yellow": "#B89B63", "ansi_blue": "#4E8FE7", "ansi_magenta": "#8A79A9", "ansi_cyan": "#6FAFC7", "ansi_white": "#D4DFEA",
+    "ansi_br_black": "#5C6D7D", "ansi_br_red": "#DF777B", "ansi_br_green": "#86B099", "ansi_br_yellow": "#D0B47D", "ansi_br_blue": "#70A8EF", "ansi_br_magenta": "#A08DBD", "ansi_br_cyan": "#89C4D7", "ansi_br_white": "#F7FBFF"
+  },
+  "style": {"corner_radius": 3, "rounding_power": 1.5, "opacity": 0.985, "opacity_inactive": 0.95, "surface_opacity": 0.98, "inactive_dim": 0.02, "blur_on": false, "blur_strength": 4, "blur_passes": 1, "shadow_on": true, "shadow_radius": 10, "shadow_render_power": 3, "shadow_opacity": 0.32, "shadow_color": "#000000", "shadow_offset": "0 5", "gaps": 7, "window_gap": 7, "bar_padding": 6, "border_width": 1, "bar_height": 44, "animation_ms": 105, "animation_profile": "smooth", "workspace_animation": "slide", "motion_scale": 1.0}
+}
