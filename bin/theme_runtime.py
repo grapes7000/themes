@@ -211,14 +211,17 @@ def _starship_color(key: str, roles: dict[str, Any]) -> str:
     """Map common palette names onto the active theme roles."""
     k = key.lower()
     exact = {
-        "bg": roles.get("bg_alt", roles["bg"]),
+        "bg": roles["bg"],
         "background": roles["bg"],
+        "surface": roles.get("bg_alt", roles["bg"]),
         "fg": roles["text"],
         "foreground": roles["text"],
+        "muted": roles.get("text_dim", roles["text"]),
         "accent": roles["accent"],
         "accent2": roles.get("accent2", roles["accent"]),
         "edge": roles.get("text_dim", roles["text"]),
         "urgent": roles.get("urgent", roles["accent"]),
+        "warn": roles.get("ansi_yellow", roles.get("warning", roles["accent"])),
     }
     if k in exact:
         return exact[k]
@@ -250,17 +253,36 @@ def _starship_color(key: str, roles: dict[str, Any]) -> str:
 
 
 def _sync_starship_runtime(theme: dict[str, Any]) -> tuple[bool, str]:
-    """Recolor the Starship file the current shell actually reads."""
+    """Update the Starship file the current shell actually reads.
+
+    The desktop's managed STARSHIP_CONFIG is a mirror of ~/.config/starship.toml,
+    which the canonical theme_starship renderer has already generated. Copying
+    that file verbatim preserves prompt geometry, glyphs, and exact palette-role
+    assignments. Only unknown/custom STARSHIP_CONFIG paths use palette-only
+    recoloring as a compatibility fallback.
+    """
     configured = os.environ.get("STARSHIP_CONFIG")
     if not configured or not target_enabled("starship"):
         return False, ""
     target = Path(configured).expanduser()
     default = CFG / "starship.toml"
+    managed = CFG / "theme-engine" / "generated" / "starship.toml"
+
     try:
         if target.resolve() == default.resolve():
             return False, ""
     except OSError:
         pass
+
+    try:
+        is_managed = target.resolve() == managed.resolve()
+    except OSError:
+        is_managed = target == managed
+
+    if is_managed and default.is_file():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(default, target)
+        return True, str(target)
 
     if not target.exists():
         if default.is_file():
