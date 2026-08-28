@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "paper",
+  "description": "Warm ivory paper, charcoal ink and quiet warm-grey structure with rust and sage terminal color.",
+  "dark": false,
+  "roles": {
+    "bg": "#F2EEE6", "bg_alt": "#EAE4D9", "surface_0": "#F8F5EF", "surface_1": "#FCFAF5", "surface_2": "#DED7CB", "overlay": "#FFFDF8", "hover": "#E7E0D5", "selected": "#A65A44",
+    "text": "#28251F", "text_dim": "#777066", "focus": "#A65A44", "border_normal": "#CFC6B8", "border_subtle": "#DED6CA", "border_strong": "#A65A44",
+    "accent": "#A65A44", "accent2": "#6C7F73", "urgent": "#A44747", "success": "#6F8066", "warning": "#A9824A", "info": "#6C7F73", "disabled": "#A39B90",
+    "selection_bg": "#E2C8BC", "selection_fg": "#28251F", "sel_bg": "#E2C8BC", "sel_fg": "#28251F",
+    "ansi_black": "#2C2B28", "ansi_red": "#A65A44", "ansi_green": "#6F8066", "ansi_yellow": "#A9824A", "ansi_blue": "#6F7B87", "ansi_magenta": "#8A6F78", "ansi_cyan": "#6C7F73", "ansi_white": "#D8D2C8",
+    "ansi_br_black": "#68645E", "ansi_br_red": "#BF715A", "ansi_br_green": "#87957D", "ansi_br_yellow": "#BE9A63", "ansi_br_blue": "#87929D", "ansi_br_magenta": "#9F858E", "ansi_br_cyan": "#83958A", "ansi_br_white": "#FFFDF8"
+  },
+  "style": {"corner_radius": 5, "rounding_power": 1.7, "opacity": 1.0, "opacity_inactive": 0.98, "surface_opacity": 1.0, "inactive_dim": 0.02, "blur_on": false, "blur_strength": 4, "blur_passes": 1, "shadow_on": true, "shadow_radius": 10, "shadow_render_power": 3, "shadow_opacity": 0.14, "shadow_color": "#6E6252", "shadow_offset": "0 3", "gaps": 10, "window_gap": 10, "bar_padding": 7, "border_width": 1, "bar_height": 46, "animation_ms": 120, "animation_profile": "smooth", "workspace_animation": "slide", "motion_scale": 1.0}
+}
