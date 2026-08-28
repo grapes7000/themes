@@ -274,7 +274,7 @@ style = "bold fg:bg bg:accent2"
 
 [git_state]
 disabled = {str(not on('state_enabled')).lower()}
-format = "[{t('git_state')} $state( $progress_current/$progress_total) ]($style)"
+format = "[{t('state_icon')} $state( $progress_current/$progress_total) ]($style)"
 style = "bold fg:urgent bg:accent2"
 
 [git_status]
