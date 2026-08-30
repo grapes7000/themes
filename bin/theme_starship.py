@@ -178,21 +178,18 @@ format = "[{t('git_end')}](fg:accent2)"'''
 
     os_block = "$os$username$hostname" if on("os_enabled") else "$username$hostname"
 
-    # --- right prompt: one continuous accent2-tinted capsule, bookended by
-    # directional Powerline caps, wrapped in a single (...) group so the whole
-    # thing -- caps included -- disappears rather than floating alone when every
-    # module inside it is off or has nothing to report. Status and low-battery
-    # tiers keep their own urgent/warn fills so failures still pop out.
+    # Match the portable fallback's right prompt: one left-facing Powerline cap
+    # starts a continuous surface-coloured telemetry bar. Individual modules
+    # keep semantic foreground colours, but the bar itself has no closing cap.
     right = "".join([
-        "$cmd_duration" if on("duration_enabled") else "",
         "$status" if on("cmd_status_enabled") else "",
+        "$cmd_duration" if on("duration_enabled") else "",
         "$jobs" if on("jobs_enabled") else "",
         "$battery" if on("battery_enabled") else "",
         "$time" if on("time_enabled") else "",
     ])
     right_format = (
-        f"([{_G['arrow_cap_left']}](fg:accent2){right}"
-        f"[{_G['arrow_cap_right']}](fg:accent2))"
+        f"([{_G['arrow_cap_left']}](fg:surface){right})"
         if right else ""
     )
 
@@ -374,31 +371,26 @@ format = "[$symbol$ram ](bold urgent)"
 [cmd_duration]
 disabled = {str(not on('duration_enabled')).lower()}
 min_time = {int(p['duration_min_ms'])}
-format = "[{t('duration_icon')} $duration ](bold fg:bg bg:accent2)"
+format = "[ {t('duration_icon')} $duration ](bold fg:fg bg:surface)"
 
 [status]
 disabled = {str(not on('cmd_status_enabled')).lower()}
 success_symbol = ""
-format = "[{t('cmd_status_icon')} $status ](bold fg:bg bg:urgent)"
+format = "[ {t('cmd_status_icon')} $status ](bold fg:urgent bg:surface)"
 
 [jobs]
 disabled = {str(not on('jobs_enabled')).lower()}
 symbol = "{t('jobs_icon')} "
-format = "[$symbol$number ](bold fg:bg bg:accent2)"
+format = "[$symbol$number ](bold fg:accent bg:surface)"
 
 [[battery.display]]
-threshold = 10
-style = "bold fg:bg bg:urgent"
-discharging_symbol = "{_G['batt_crit']} "
-
-[[battery.display]]
-threshold = 30
-style = "bold fg:bg bg:warn"
+threshold = 20
+style = "bold fg:urgent bg:surface"
 discharging_symbol = "{_G['batt_low']} "
 
 [[battery.display]]
-threshold = 60
-style = "fg:bg bg:accent2"
+threshold = 100
+style = "bold fg:fg bg:surface"
 
 [battery]
 disabled = {str(not on('battery_enabled')).lower()}
@@ -410,7 +402,7 @@ format = "[$symbol$percentage% ]($style)"
 [time]
 disabled = {str(not on('time_enabled')).lower()}
 time_format = "%I:%M %p"
-format = "[ {_G['time']} $time](bold fg:bg bg:accent2)"
+format = "[ {_G['time']} $time ](bold fg:warn bg:surface)"
 
 [character]
 success_symbol = "[╰─ {t('success_symbol')}](bold accent)"
