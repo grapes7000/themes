@@ -393,7 +393,7 @@ disabled = {str(not on('battery_enabled')).lower()}
 full_symbol = "{_G['batt_full']} "
 charging_symbol = "{_G['batt_charge']} "
 discharging_symbol = "{_G['batt_full']} "
-format = "[$symbol$percentage% ]($style)"
+format = "[$symbol$percentage]($style)"
 
 [time]
 disabled = {str(not on('time_enabled')).lower()}
