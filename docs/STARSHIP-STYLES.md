@@ -1,6 +1,6 @@
-# Starship layout styles
+# Starship prompt layouts
 
-The theme engine now separates **desktop palette** from **prompt layout**. Changing the desktop theme recolors the active Starship layout; changing the Starship layout does not change the desktop theme.
+The themes repo owns the Starship layout renderer. Every layout uses the active desktop theme's semantic colors, so changing desktop themes recolors the selected Starship layout without changing its geometry.
 
 ## Commands
 
@@ -14,36 +14,48 @@ theme starship use neon
 theme starship use operator
 ```
 
-`theme starship <name>` is a shorthand for `theme starship use <name>`. `theme starship` by itself regenerates the active layout. `theme starship edit` opens the detailed TUI editor.
-
-The selected layout and detailed prompt preferences are stored in `~/.config/theme-engine/starship.json`. The generated prompt remains `~/.config/starship.toml` and is still recolored from the active theme roles.
+The style name may also be used directly, for example `theme starship hud`. `theme starship edit` opens the detailed Starship TUI.
 
 ## Layouts
 
-- **workspace** — the original two-line Powerline layout, expanded with a short commit hash, matching Git tag, remote tracking branch, Git operation state, counted working-tree status, and added/deleted line metrics.
-- **minimal** — directory + branch + useful Git state only. Battery, time, jobs, language, cloud, and container context are off by default. Failed command status and slow command duration can still appear on the right.
-- **hud** — a one-line information dashboard using Starship's `fill` module to bridge workspace/context information to status, battery, and time across the available terminal width.
-- **neon** — a transparent variant of the workspace prompt. It keeps Git/dev context but trades filled Powerline blocks for thin separators and semantic accent colors.
-- **operator** — a repo-focused console. It adds the age of the most recent commit and an optional project status signal, then keeps dev/container/cloud context on a separate line.
+### workspace
 
-## Operator project status
+The original two-line filled Powerline prompt is preserved as the default. It keeps the OS Nerd Font symbol and the same identity → directory → Git geometry. Git now also exposes the current commit hash/tag, tracking branch, operation state, counted status, and added/deleted line metrics when available. Right-side status, duration, jobs, battery, and time remain transparent.
 
-`operator` checks for a non-empty `.starship-status` file at the Git repository root. If present, its contents are shown as a compact project signal.
+### minimal
 
-For example:
+A quiet two-line prompt with only the directory and Git branch/status on the left. Battery, clock, jobs, language, container, and cloud modules are disabled by the preset. Failed-command status and slow-command duration can still appear on the right.
+
+### hud
+
+A compact dashboard. OS, directory, Git status, development context, and telemetry share one line, with Starship's `fill` module stretching a dotted bridge across unused terminal width. The prompt marker sits on the second line.
+
+### neon
+
+A transparent cyber layout rather than a Powerline variant. The first line uses explicit `SYS`, `PATH`, and `GIT` sections with angular separators; development/container context lives on the second line. It uses the same active theme palette, but no filled Powerline blocks.
+
+### operator
+
+A multi-line repo console with labeled `cwd`, `git`, and `env` rows. The Git row includes branch, commit, state/status, diff metrics, and a custom last-commit-age module. The environment row can display a cached project signal from `.starship-status` at the repository root.
+
+Example:
 
 ```bash
-echo 'tests:pass' > .starship-status
+echo 'tests:pass' > "$(git rev-parse --show-toplevel)/.starship-status"
 ```
 
-or:
+This is intentionally a cached signal: Starship reads one short file instead of running a test suite or build on every prompt render.
 
-```bash
-echo 'agent:working' > .starship-status
+## Theme color ownership
+
+`~/.config/starship.toml` is the canonical generated Starship config. On installations whose `STARSHIP_CONFIG` points at `~/.config/theme-engine/generated/starship.toml`, the `theme` wrapper converts that managed path into a symlink to the canonical file. This prevents the mirror from going stale if a later desktop component blocks or times out during a full theme apply.
+
+## Profile
+
+The selected layout and user-tunable Starship options are stored in:
+
+```text
+~/.config/theme-engine/starship.json
 ```
 
-This deliberately keeps expensive work outside prompt rendering. Tests, CI, agents, or build scripts can update the tiny file; Starship only reads the cached result.
-
-## Performance
-
-The built-in Git modules provide branch, commit/tag, state, status, and diff metrics. The `operator` layout adds two lightweight custom commands: a local `git log -1` for commit age and a read of `.starship-status` when that file exists. The layout uses a slightly higher Starship `command_timeout` than the other styles to accommodate those local checks without allowing long-running prompt hooks.
+Switching desktop color themes does not change this profile; switching Starship layouts does not change the desktop theme.
