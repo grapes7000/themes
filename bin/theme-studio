@@ -223,11 +223,32 @@ def wallpaper(args: list[str]) -> int:
 
 
 def _sync_starship_runtime_only() -> None:
-    """Mirror ~/.config/starship.toml when the current shell reads the managed copy.
+    """Make the managed Starship path follow the canonical generated config.
 
-    Deliberately avoid apply_studio_overrides() here: a Starship-only switch
-    should not reload unrelated desktop components (or block on a notifier).
+    Some dotfiles installations point STARSHIP_CONFIG at
+    ~/.config/theme-engine/generated/starship.toml. A copied mirror can go stale
+    if a later desktop component blocks theme application, so use an atomic
+    symlink to ~/.config/starship.toml instead. That keeps every Starship layout
+    recolored immediately whenever the active desktop theme regenerates it.
     """
+    cfg = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()
+    canonical = cfg / "starship.toml"
+    managed = cfg / "theme-engine" / "generated" / "starship.toml"
+    configured_raw = os.environ.get("STARSHIP_CONFIG")
+
+    if configured_raw and canonical.is_file():
+        configured = Path(configured_raw).expanduser().absolute()
+        if configured == managed.absolute():
+            managed.parent.mkdir(parents=True, exist_ok=True)
+            temporary = managed.with_name(f".{managed.name}.{os.getpid()}.tmp")
+            temporary.unlink(missing_ok=True)
+            try:
+                os.symlink(str(canonical), temporary)
+                os.replace(temporary, managed)
+                return
+            finally:
+                temporary.unlink(missing_ok=True)
+
     current = theme_runtime.active_theme()
     if not current:
         return
@@ -357,6 +378,12 @@ def validate(name: str | None) -> int:
 
 
 def main() -> int:
+    # Establish the managed Starship path as a symlink before any full theme
+    # apply. The legacy generator can then recolor ~/.config/starship.toml and
+    # the running shell sees that change immediately, even if a later component
+    # (for example a missing notification daemon) blocks the rest of the apply.
+    _sync_starship_runtime_only()
+
     args = sys.argv[1:]
     if not args:
         return launch()
