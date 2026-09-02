@@ -5,7 +5,14 @@ import subprocess
 import sys
 import unicodedata
 
-from theme_starship import DEFAULT, PROFILE_PATH, profile, save
+from theme_starship import (
+    DEFAULT,
+    PROFILE_PATH,
+    STYLE_NAMES,
+    apply_style,
+    profile,
+    save,
+)
 
 
 SECTIONS = (
@@ -19,7 +26,7 @@ SECTIONS = (
 )
 
 LABELS = {
-    "prompt_style": "V2 workspace profile",
+    "prompt_style": "Prompt layout",
     "os_enabled": "Show OS icon (user and SSH host stay visible)",
     "path_icon": "Directory icon", "path_length": "Directory components", "path_repo_root": "Trim path to repository",
     "branch_enabled": "Show Git branch", "branch_icon": "Git branch icon", "state_enabled": "Show Git operation state", "state_icon": "Git state icon", "status_enabled": "Show Git status", "status_conflicted": "Conflict symbol", "status_ahead": "Ahead symbol", "status_behind": "Behind symbol", "status_diverged": "Diverged symbol", "status_untracked": "Untracked symbol", "status_stashed": "Stashed symbol", "status_modified": "Modified symbol", "status_staged": "Staged symbol", "status_renamed": "Renamed symbol", "status_deleted": "Deleted symbol",
@@ -29,14 +36,8 @@ LABELS = {
     "lead_fade": "Left cap", "lead_arrow": "Identity-to-directory divider", "git_connector": "Directory-to-Git divider", "git_end": "Git closing cap", "path_end": "Non-Git path closing cap",
 }
 
-PRESETS = {
-    "Powerlevel10k workspace": dict(DEFAULT, prompt_style="Powerlevel10k workspace"),
-    "Focused development": dict(DEFAULT, prompt_style="Focused development", container_enabled=False, cloud_enabled=False, battery_enabled=False, memory_enabled=False, time_enabled=False),
-    "Minimal status": dict(DEFAULT, prompt_style="Minimal status", dev_enabled=False, container_enabled=False, cloud_enabled=False, duration_enabled=False, cmd_status_enabled=False, jobs_enabled=False, battery_enabled=False, memory_enabled=False, time_enabled=False),
-}
-
 CHOICES = {
-    "prompt_style": tuple(PRESETS),
+    "prompt_style": STYLE_NAMES,
     "lead_fade": ("", "", ""), "lead_arrow": ("", ""),
     "git_connector": ("", ""), "git_end": ("", "", ""),
     "path_end": ("", "", ""), "path_icon": ("󰉋", "", "󰉖"),
@@ -83,10 +84,6 @@ def cycle(field, value):
         return choices[0]
 
 
-def segment(enabled, text):
-    return text if enabled else ""
-
-
 def cell_width(text):
     return sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in text)
 
@@ -105,50 +102,50 @@ def clip_cells(text, width):
 
 
 def preview_lines(values):
-    identity = f"{segment(values['os_enabled'], ' ')}user@ssh-host"
+    style = values["prompt_style"]
     workspace = f"{values['path_icon']} ~/code/project"
-    git = " ".join(part for part in (
-        segment(values["branch_enabled"], f"{values['branch_icon']} main"),
-        segment(values["state_enabled"], f"{values['state_icon']} rebase"),
-        segment(values["status_enabled"], f"{values['status_ahead']}2 {values['status_modified']}1"),
-    ) if part)
+    git_simple = f"{values['branch_icon']} main {values['status_ahead']}2 {values['status_modified']}1"
+    git_rich = f"{values['branch_icon']} main  󰜘 a1b2c3  {values['status_ahead']}2 {values['status_modified']}1 +18 -4"
     context = " ".join(part for part in (
-        segment(values["dev_enabled"], " 3.13"),
-        segment(values["container_enabled"], " docker"),
-        segment(values["cloud_enabled"], "󱁢 aws"),
+        " 3.14" if values["dev_enabled"] else "",
+        " docker" if values["container_enabled"] else "",
+        "󱁢 aws" if values["cloud_enabled"] else "",
     ) if part)
-    left = "  ".join(part for part in (identity, workspace, git, context) if part)
-    right = " ".join(part for part in (
-        segment(values["duration_enabled"], f"{values['duration_icon']} 2s"),
-        segment(values["cmd_status_enabled"], f"{values['cmd_status_icon']} 1"),
-        segment(values["jobs_enabled"], f"{values['jobs_icon']} 2"),
-        segment(values["battery_enabled"], "󰂄 82%"),
-        segment(values["memory_enabled"], "󰍛 76%"),
-        segment(values["time_enabled"], " 10:42 AM"),
+    telemetry = " ".join(part for part in (
+        f"{values['duration_icon']} 2s" if values["duration_enabled"] else "",
+        f"{values['cmd_status_icon']} 1" if values["cmd_status_enabled"] else "",
+        f"{values['jobs_icon']} 2" if values["jobs_enabled"] else "",
+        "󰂄 82%" if values["battery_enabled"] else "",
+        " 10:42 AM" if values["time_enabled"] else "",
     ) if part)
-    second = f"╰─ {values['success_symbol']} success   ╰─ {values['error_symbol']} error   ╰─ {values['vim_symbol']} vim"
-    return left, right, second
+
+    if style == "minimal":
+        return f"{workspace}  {values['branch_icon']} main", telemetry, values["success_symbol"]
+    if style == "hud":
+        return f"╭─  {workspace}  {values['branch_icon']} main  ···········  {telemetry} ─╮", "", f"╰─ {values['success_symbol']}"
+    if style == "operator":
+        return "╭─ OPERATOR  ─────────────── 󰂄 82%  10:42 AM", telemetry, f"├─ cwd  {workspace}   ├─ git  {git_rich} 󰔛 12m   ├─ env  {context} 󰄬 tests:pass   ╰─ {values['success_symbol']}"
+    # workspace, muted, and neon intentionally share the clean Powerline
+    # geometry; their visible distinction is the palette treatment.
+    return f"   {workspace}  {git_simple}   {context}", telemetry, f"╰─ {values['success_symbol']}"
 
 
 def draw(stdscr, values, section, row, notice, embedded=False):
     stdscr.erase()
     height, width = stdscr.getmaxyx()
     if height < 12 or width < 48:
-        stdscr.addstr(0, 0, clip_cells("Starship Editor needs at least 48×12. Resize, or q to go back.", width - 1),
-                      curses.A_BOLD)
+        stdscr.addstr(0, 0, clip_cells("Starship Editor needs at least 48×12. Resize, or q to go back.", width - 1), curses.A_BOLD)
         stdscr.refresh()
         return
     stdscr.addstr(0, 0, clip_cells("STARSHIP PROMPT EDITOR", width - 1), curses.A_BOLD)
     back = "back without saving" if embedded else "quit without saving"
-    stdscr.addstr(1, 0, clip_cells(
-        f"←→ sections  ↑↓ setting  Enter toggle/cycle  e edit  r reset section  s save  q {back}",
-        width - 1))
+    stdscr.addstr(1, 0, clip_cells(f"←→ sections  ↑↓ setting  Enter toggle/cycle  e edit  r reset section  s save  q {back}", width - 1))
     name, keys = SECTIONS[section]
     for index, (title, _) in enumerate(SECTIONS):
         if 3 + index >= height - 1:
             break
-        style = curses.A_REVERSE if index == section else 0
-        stdscr.addstr(3 + index, 0, clip_cells(title, 20), style)
+        style_attr = curses.A_REVERSE if index == section else 0
+        stdscr.addstr(3 + index, 0, clip_cells(title, 20), style_attr)
     if width > 22 and height > 3:
         stdscr.addstr(3, 22, clip_cells(name, width - 23), curses.A_BOLD)
     show_preview = height >= 18
@@ -159,22 +156,21 @@ def draw(stdscr, values, section, row, notice, embedded=False):
         if 5 + index - first >= content_bottom:
             break
         value = "on" if values[key] is True else "off" if values[key] is False else str(values[key])
-        style = curses.A_REVERSE if index == row else 0
+        style_attr = curses.A_REVERSE if index == row else 0
         if width > 22:
-            stdscr.addstr(5 + index - first, 22, clip_cells(f"{LABELS[key]}: {value}", width - 23), style)
+            stdscr.addstr(5 + index - first, 22, clip_cells(f"{LABELS[key]}: {value}", width - 23), style_attr)
     if show_preview:
         left, right, marker = preview_lines(values)
         right_width = cell_width(right)
         left_width = max(0, width - right_width - 5) if right else width - 1
-        stdscr.addstr(height - 7, 0, clip_cells("PROMPT PREVIEW (layout sample; your theme supplies the colors)", width - 1), curses.A_BOLD)
+        stdscr.addstr(height - 7, 0, clip_cells("PROMPT PREVIEW (geometry sample; your theme supplies the colors)", width - 1), curses.A_BOLD)
         stdscr.addstr(height - 6, 0, clip_cells(left, left_width))
         if right and right_width < width:
             stdscr.addnstr(height - 6, width - right_width - 1, right, right_width)
         stdscr.addstr(height - 5, 0, clip_cells(marker, width - 1))
         stdscr.addstr(height - 3, 0, clip_cells(f"Shared profile: {PROFILE_PATH}", width - 1))
     selected = keys[row]
-    kind = ("On/off setting." if isinstance(values[selected], bool)
-            else "Press Enter for presets or e to type a custom value.")
+    kind = ("On/off setting." if isinstance(values[selected], bool) else "Press Enter to cycle presets or e to type a custom value.")
     stdscr.addstr(height - 2, 0, clip_cells(f"{LABELS[selected]} — {kind}", width - 1), curses.A_BOLD)
     stdscr.addstr(height - 1, 0, clip_cells(notice, width - 1))
     stdscr.refresh()
@@ -186,10 +182,8 @@ def run(stdscr, embedded=False):
     except curses.error:
         pass
     values = profile()
-    if values["prompt_style"] not in PRESETS:
-        values["prompt_style"] = "Powerlevel10k workspace"
     section = row = 0
-    notice = "V2 layout is shared across themes; each active theme supplies its own palette."
+    notice = "V4 layouts share the active desktop palette; neon derives brighter colors from that palette."
     while True:
         draw(stdscr, values, section, row, notice, embedded)
         key = stdscr.getch()
@@ -211,26 +205,33 @@ def run(stdscr, embedded=False):
             row = (row + 1) % len(keys)
         elif key in (10, 13, ord(" ")):
             field = keys[row]
-            values[field] = not values[field] if isinstance(values[field], bool) else cycle(field, values[field])
-            if field == "prompt_style":
-                values.update(PRESETS[values[field]])
-                notice = f"{values[field]} restored its complete v2 profile."
+            if isinstance(values[field], bool):
+                values[field] = not values[field]
             else:
-                notice = f"{LABELS[field]} changed. Press e to enter a custom value."
+                new_value = cycle(field, values[field])
+                if field == "prompt_style":
+                    values = apply_style(values, new_value)
+                else:
+                    values[field] = new_value
+            notice = f"{LABELS[field]} changed."
         elif key == ord("e"):
             field = keys[row]
             if not isinstance(values[field], bool):
-                values[field] = edit(stdscr, LABELS[field], values[field])
+                value = edit(stdscr, LABELS[field], values[field])
+                if field == "prompt_style" and value in STYLE_NAMES:
+                    values = apply_style(values, value)
+                else:
+                    values[field] = value
         elif key == ord("r"):
             if name == "Style":
-                values.update(PRESETS["Powerlevel10k workspace"])
+                values = apply_style(values, "workspace")
             else:
                 for field in keys:
                     values[field] = DEFAULT[field]
-            notice = f"{name} reset to the renderer's v2 defaults."
+            notice = f"{name} reset to defaults."
         elif key == ord("d"):
-            values = dict(PRESETS["Powerlevel10k workspace"])
-            notice = "Powerlevel10k workspace restored."
+            values = apply_style(dict(DEFAULT), "workspace")
+            notice = "Workspace layout restored."
         elif key == ord("s"):
             save(values)
             if embedded:

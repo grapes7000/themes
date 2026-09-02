@@ -12,6 +12,14 @@ import tempfile
 
 import theme_runtime
 from theme_schema import validation_summary, validate_theme
+from theme_starship import (
+    STYLE_DESCRIPTIONS,
+    STYLE_NAMES,
+    apply_style as apply_starship_style,
+    normalize_style as normalize_starship_style,
+    profile as starship_profile,
+    save as save_starship_profile,
+)
 
 
 def usage() -> str:
@@ -31,6 +39,14 @@ Compatible commands:
   theme homepage ...        Existing homepage commands
   theme font ...            Existing font commands
   theme wallpaper ...       Semantic wallpaper template commands
+
+Starship layouts:
+  theme starship                     Regenerate the active Starship layout
+  theme starship list                List available layouts
+  theme starship current             Print the active layout
+  theme starship use <name>          Switch layout and regenerate immediately
+  theme starship <name>              Shorthand for `use <name>`
+  theme starship edit                Open the detailed Starship editor
 
 Wallpaper templates:
   theme wallpaper                   Show active template
@@ -206,6 +222,93 @@ def wallpaper(args: list[str]) -> int:
     return 0
 
 
+def _sync_starship_runtime_only() -> None:
+    """Make the managed Starship path follow the canonical generated config.
+
+    Some dotfiles installations point STARSHIP_CONFIG at
+    ~/.config/theme-engine/generated/starship.toml. A copied mirror can go stale
+    if a later desktop component blocks theme application, so use an atomic
+    symlink to ~/.config/starship.toml instead. That keeps every Starship layout
+    recolored immediately whenever the active desktop theme regenerates it.
+    """
+    cfg = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()
+    canonical = cfg / "starship.toml"
+    managed = cfg / "theme-engine" / "generated" / "starship.toml"
+    configured_raw = os.environ.get("STARSHIP_CONFIG")
+
+    if configured_raw and canonical.is_file():
+        configured = Path(configured_raw).expanduser().absolute()
+        if configured == managed.absolute():
+            managed.parent.mkdir(parents=True, exist_ok=True)
+            temporary = managed.with_name(f".{managed.name}.{os.getpid()}.tmp")
+            temporary.unlink(missing_ok=True)
+            try:
+                os.symlink(str(canonical), temporary)
+                os.replace(temporary, managed)
+                return
+            finally:
+                temporary.unlink(missing_ok=True)
+
+    current = theme_runtime.active_theme()
+    if not current:
+        return
+    try:
+        theme = theme_runtime.load_theme(current)
+        sync = getattr(theme_runtime, "_sync_starship_runtime", None)
+        if sync:
+            sync(theme)
+    except Exception as exc:
+        print(f"theme starship: runtime mirror warning: {exc}", file=sys.stderr)
+
+
+def starship(args: list[str]) -> int:
+    values = starship_profile()
+    current = normalize_starship_style(values.get("prompt_style"))
+
+    if args and args[0] in {"list", "--list", "-l"}:
+        for name in STYLE_NAMES:
+            marker = "*" if name == current else " "
+            print(f"{marker} {name:<9} {STYLE_DESCRIPTIONS[name]}")
+        return 0
+
+    if args and args[0] in {"current", "status"}:
+        print(current)
+        return 0
+
+    if args and args[0] in {"edit", "config"}:
+        editor = shutil.which("starship-config")
+        if not editor:
+            editor = str(Path(__file__).resolve().with_name("starship-config"))
+        return subprocess.call([editor])
+
+    style: str | None = None
+    if args and args[0] in {"use", "set"}:
+        if len(args) < 2:
+            print("theme starship use: expected a style name", file=sys.stderr)
+            print("available: " + ", ".join(STYLE_NAMES), file=sys.stderr)
+            return 2
+        style = args[1]
+    elif args and args[0] not in {"refresh", "apply"}:
+        style = args[0]
+
+    if style is not None:
+        normalized = normalize_starship_style(style)
+        if str(style).strip().lower() not in STYLE_NAMES:
+            print(f"theme starship: unknown style '{style}'", file=sys.stderr)
+            print("available: " + ", ".join(STYLE_NAMES), file=sys.stderr)
+            return 2
+        values = apply_starship_style(values, normalized)
+        save_starship_profile(values)
+        current = normalized
+
+    code = run_legacy(["starship"])
+    if code != 0:
+        return code
+    _sync_starship_runtime_only()
+    print(f"starship style -> {current}")
+    return 0
+
+
 def _enable_live_preview_by_default() -> None:
     """Make Theme Studio edits reach the desktop immediately.
 
@@ -275,6 +378,12 @@ def validate(name: str | None) -> int:
 
 
 def main() -> int:
+    # Establish the managed Starship path as a symlink before any full theme
+    # apply. The legacy generator can then recolor ~/.config/starship.toml and
+    # the running shell sees that change immediately, even if a later component
+    # (for example a missing notification daemon) blocks the rest of the apply.
+    _sync_starship_runtime_only()
+
     args = sys.argv[1:]
     if not args:
         return launch()
@@ -291,8 +400,10 @@ def main() -> int:
         return run_legacy(args[1:])
     if args[0] == "wallpaper":
         return wallpaper(args[1:])
+    if args[0] == "starship":
+        return starship(args[1:])
 
-    passthrough = {"shape", "texture", "anim", "effects", "homepage", "font", "starship", "-l", "--list"}
+    passthrough = {"shape", "texture", "anim", "effects", "homepage", "font", "-l", "--list"}
     if args[0] in passthrough or args[0].startswith("-"):
         code = run_legacy(args)
         if code == 0 and args[0] in {"shape", "texture", "anim", "effects", "homepage", "font"}:
