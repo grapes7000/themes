@@ -104,7 +104,8 @@ def clip_cells(text, width):
 def preview_lines(values):
     style = values["prompt_style"]
     workspace = f"{values['path_icon']} ~/code/project"
-    git = f"{values['branch_icon']} main  󰜘 a1b2c3  {values['status_ahead']}2 {values['status_modified']}1 +18 -4"
+    git_simple = f"{values['branch_icon']} main {values['status_ahead']}2 {values['status_modified']}1"
+    git_rich = f"{values['branch_icon']} main  󰜘 a1b2c3  {values['status_ahead']}2 {values['status_modified']}1 +18 -4"
     context = " ".join(part for part in (
         " 3.14" if values["dev_enabled"] else "",
         " docker" if values["container_enabled"] else "",
@@ -122,11 +123,11 @@ def preview_lines(values):
         return f"{workspace}  {values['branch_icon']} main", telemetry, values["success_symbol"]
     if style == "hud":
         return f"╭─  {workspace}  {values['branch_icon']} main  ···········  {telemetry} ─╮", "", f"╰─ {values['success_symbol']}"
-    if style == "neon":
-        return f"◢ SYS    PATH {workspace}   GIT {git} ◣", telemetry, f"  └─ {context} {values['success_symbol']}"
     if style == "operator":
-        return "╭─ OPERATOR  ─────────────── 󰂄 82%  10:42 AM", telemetry, f"├─ cwd  {workspace}   ├─ git  {git} 󰔛 12m   ├─ env  {context} 󰄬 tests:pass   ╰─ {values['success_symbol']}"
-    return f"  {workspace}  {git}  {context}", telemetry, f"╰─ {values['success_symbol']}"
+        return "╭─ OPERATOR  ─────────────── 󰂄 82%  10:42 AM", telemetry, f"├─ cwd  {workspace}   ├─ git  {git_rich} 󰔛 12m   ├─ env  {context} 󰄬 tests:pass   ╰─ {values['success_symbol']}"
+    # workspace, muted, and neon intentionally share the clean Powerline
+    # geometry; their visible distinction is the palette treatment.
+    return f"   {workspace}  {git_simple}   {context}", telemetry, f"╰─ {values['success_symbol']}"
 
 
 def draw(stdscr, values, section, row, notice, embedded=False):
@@ -138,9 +139,7 @@ def draw(stdscr, values, section, row, notice, embedded=False):
         return
     stdscr.addstr(0, 0, clip_cells("STARSHIP PROMPT EDITOR", width - 1), curses.A_BOLD)
     back = "back without saving" if embedded else "quit without saving"
-    stdscr.addstr(1, 0, clip_cells(
-        f"←→ sections  ↑↓ setting  Enter toggle/cycle  e edit  r reset section  s save  q {back}",
-        width - 1))
+    stdscr.addstr(1, 0, clip_cells(f"←→ sections  ↑↓ setting  Enter toggle/cycle  e edit  r reset section  s save  q {back}", width - 1))
     name, keys = SECTIONS[section]
     for index, (title, _) in enumerate(SECTIONS):
         if 3 + index >= height - 1:
@@ -164,15 +163,14 @@ def draw(stdscr, values, section, row, notice, embedded=False):
         left, right, marker = preview_lines(values)
         right_width = cell_width(right)
         left_width = max(0, width - right_width - 5) if right else width - 1
-        stdscr.addstr(height - 7, 0, clip_cells("PROMPT PREVIEW (layout sample; your theme supplies the colors)", width - 1), curses.A_BOLD)
+        stdscr.addstr(height - 7, 0, clip_cells("PROMPT PREVIEW (geometry sample; your theme supplies the colors)", width - 1), curses.A_BOLD)
         stdscr.addstr(height - 6, 0, clip_cells(left, left_width))
         if right and right_width < width:
             stdscr.addnstr(height - 6, width - right_width - 1, right, right_width)
         stdscr.addstr(height - 5, 0, clip_cells(marker, width - 1))
         stdscr.addstr(height - 3, 0, clip_cells(f"Shared profile: {PROFILE_PATH}", width - 1))
     selected = keys[row]
-    kind = ("On/off setting." if isinstance(values[selected], bool)
-            else "Press Enter to cycle presets or e to type a custom value.")
+    kind = ("On/off setting." if isinstance(values[selected], bool) else "Press Enter to cycle presets or e to type a custom value.")
     stdscr.addstr(height - 2, 0, clip_cells(f"{LABELS[selected]} — {kind}", width - 1), curses.A_BOLD)
     stdscr.addstr(height - 1, 0, clip_cells(notice, width - 1))
     stdscr.refresh()
@@ -185,7 +183,7 @@ def run(stdscr, embedded=False):
         pass
     values = profile()
     section = row = 0
-    notice = "V3 layouts share the active desktop palette; switching layout does not change theme colors."
+    notice = "V4 layouts share the active desktop palette; neon derives brighter colors from that palette."
     while True:
         draw(stdscr, values, section, row, notice, embedded)
         key = stdscr.getch()
