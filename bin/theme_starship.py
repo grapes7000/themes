@@ -28,26 +28,49 @@ _G = {
     "status_fail": chr(0xF0159),
     "arrow_ok": chr(0x276F),
     "arrow_vim": chr(0x276E),
-    "os_arch": chr(0xF0303), "os_debian": chr(0xF0306), "os_fedora": chr(0xF030A),
-    "os_ubuntu": chr(0xF031B), "os_mint": chr(0xF030E), "os_linux": chr(0xF031A),
-    "os_macos": chr(0xF0179), "os_windows": chr(0xF017A),
-    "python": chr(0xE73C), "nodejs": chr(0xE718), "rust": chr(0xE7A8), "golang": chr(0xE627),
-    "java": chr(0xE738), "lua": chr(0xE620), "php": chr(0xE73D), "ruby": chr(0xE739),
-    "package": chr(0xF03D6), "docker": chr(0xF0868), "kubernetes": chr(0xF10FE),
-    "terraform": chr(0xF1062), "nix": chr(0xF1105), "conda": chr(0xF0C3),
-    "aws": chr(0xF0E0F), "azure": chr(0xF0805), "gcloud": chr(0xF11F6),
-    "memory": chr(0xF035B), "time": chr(0xF017),
-    "batt_full": chr(0xF0079), "batt_charge": chr(0xF0084), "batt_low": chr(0xF007B),
-    "doc_ico": chr(0xF0219), "dl_ico": chr(0xF01DA), "pic_ico": chr(0xF02E9), "cfg_ico": chr(0xF0493),
+    "os_arch": chr(0xF0303),
+    "os_debian": chr(0xF0306),
+    "os_fedora": chr(0xF030A),
+    "os_ubuntu": chr(0xF031B),
+    "os_mint": chr(0xF030E),
+    "os_linux": chr(0xF031A),
+    "os_macos": chr(0xF0179),
+    "os_windows": chr(0xF017A),
+    "python": chr(0xE73C),
+    "nodejs": chr(0xE718),
+    "rust": chr(0xE7A8),
+    "golang": chr(0xE627),
+    "java": chr(0xE738),
+    "lua": chr(0xE620),
+    "php": chr(0xE73D),
+    "ruby": chr(0xE739),
+    "package": chr(0xF03D6),
+    "docker": chr(0xF0868),
+    "kubernetes": chr(0xF10FE),
+    "terraform": chr(0xF1062),
+    "nix": chr(0xF1105),
+    "conda": chr(0xF0C3),
+    "aws": chr(0xF0E0F),
+    "azure": chr(0xF0805),
+    "gcloud": chr(0xF11F6),
+    "memory": chr(0xF035B),
+    "time": chr(0xF017),
+    "batt_full": chr(0xF0079),
+    "batt_charge": chr(0xF0084),
+    "batt_low": chr(0xF007B),
+    "doc_ico": chr(0xF0219),
+    "dl_ico": chr(0xF01DA),
+    "pic_ico": chr(0xF02E9),
+    "cfg_ico": chr(0xF0493),
 }
 
 STYLE_NAMES = ("workspace", "minimal", "hud", "neon", "operator")
 STYLE_DESCRIPTIONS = {
-    "workspace": "original filled powerline prompt, now with richer Git detail",
-    "minimal": "quiet two-line path + Git prompt with only useful alerts",
-    "hud": "single-line terminal dashboard with dynamic fill and telemetry",
-    "neon": "transparent two-line cyber prompt with angular separators",
-    "operator": "multi-line repo console with Git age and project status",
+    "workspace": "the original filled Powerline prompt, unchanged",
+    "minimal": "quiet two-line directory + Git prompt",
+    "hud": "dashboard with dynamic fill and right-side telemetry",
+    "neon": "transparent SYS / PATH / GIT cyber layout",
+    "operator": "multi-line repository console with cached project status",
 }
 
 _STYLE_ALIASES = {
@@ -60,55 +83,109 @@ _STYLE_ALIASES = {
 DEFAULT = {
     "version": 3,
     "prompt_style": "workspace",
-    "lead_fade": "", "lead_arrow": "",
-    "git_connector": "", "git_end": "", "path_end": "",
-    "path_icon": _G["folder"], "path_length": 6, "path_repo_root": True,
+    "lead_fade": "",
+    "lead_arrow": "",
+    "git_connector": "",
+    "git_end": "",
+    "path_end": "",
+    "path_icon": _G["folder"],
+    "path_length": 6,
+    "path_repo_root": True,
     "os_enabled": True,
-    "branch_enabled": True, "branch_icon": _G["git_branch"],
-    "state_enabled": True, "state_icon": _G["git_state"],
+    "branch_enabled": True,
+    "branch_icon": _G["git_branch"],
+    "state_enabled": True,
+    "state_icon": _G["git_state"],
     "status_enabled": True,
-    "status_conflicted": _G["conflicted"], "status_ahead": _G["ahead"],
-    "status_behind": _G["behind"], "status_diverged": _G["diverged"],
-    "status_untracked": _G["untracked"], "status_stashed": _G["stashed"],
-    "status_modified": _G["modified"], "status_staged": _G["staged"],
-    "status_renamed": _G["renamed"], "status_deleted": _G["deleted"],
+    "status_conflicted": _G["conflicted"],
+    "status_ahead": _G["ahead"],
+    "status_behind": _G["behind"],
+    "status_diverged": _G["diverged"],
+    "status_untracked": _G["untracked"],
+    "status_stashed": _G["stashed"],
+    "status_modified": _G["modified"],
+    "status_staged": _G["staged"],
+    "status_renamed": _G["renamed"],
+    "status_deleted": _G["deleted"],
     "dev_enabled": True,
     "container_enabled": True,
     "cloud_enabled": True,
-    "duration_enabled": True, "duration_icon": _G["cmd_duration"], "duration_min_ms": 2000,
-    "cmd_status_enabled": True, "cmd_status_icon": _G["status_fail"],
-    "jobs_enabled": True, "jobs_icon": _G["jobs"],
+    "duration_enabled": True,
+    "duration_icon": _G["cmd_duration"],
+    "duration_min_ms": 2000,
+    "cmd_status_enabled": True,
+    "cmd_status_icon": _G["status_fail"],
+    "jobs_enabled": True,
+    "jobs_icon": _G["jobs"],
     "battery_enabled": True,
-    "memory_enabled": True, "memory_threshold": 75,
+    "memory_enabled": True,
+    "memory_threshold": 75,
     "time_enabled": True,
-    "success_symbol": _G["arrow_ok"], "error_symbol": _G["arrow_ok"], "vim_symbol": _G["arrow_vim"],
+    "success_symbol": _G["arrow_ok"],
+    "error_symbol": _G["arrow_ok"],
+    "vim_symbol": _G["arrow_vim"],
 }
 
 STYLE_PRESETS = {
     "workspace": {
-        "os_enabled": True, "dev_enabled": True, "container_enabled": True, "cloud_enabled": True,
-        "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True,
-        "battery_enabled": True, "memory_enabled": True, "time_enabled": True,
+        "os_enabled": True,
+        "dev_enabled": True,
+        "container_enabled": True,
+        "cloud_enabled": True,
+        "duration_enabled": True,
+        "cmd_status_enabled": True,
+        "jobs_enabled": True,
+        "battery_enabled": True,
+        "memory_enabled": True,
+        "time_enabled": True,
     },
     "minimal": {
-        "os_enabled": False, "dev_enabled": False, "container_enabled": False, "cloud_enabled": False,
-        "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": False,
-        "battery_enabled": False, "memory_enabled": False, "time_enabled": False,
+        "os_enabled": False,
+        "dev_enabled": False,
+        "container_enabled": False,
+        "cloud_enabled": False,
+        "duration_enabled": True,
+        "cmd_status_enabled": True,
+        "jobs_enabled": False,
+        "battery_enabled": False,
+        "memory_enabled": False,
+        "time_enabled": False,
     },
     "hud": {
-        "os_enabled": True, "dev_enabled": True, "container_enabled": False, "cloud_enabled": False,
-        "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True,
-        "battery_enabled": True, "memory_enabled": False, "time_enabled": True,
+        "os_enabled": True,
+        "dev_enabled": True,
+        "container_enabled": False,
+        "cloud_enabled": False,
+        "duration_enabled": True,
+        "cmd_status_enabled": True,
+        "jobs_enabled": True,
+        "battery_enabled": True,
+        "memory_enabled": False,
+        "time_enabled": True,
     },
     "neon": {
-        "os_enabled": True, "dev_enabled": True, "container_enabled": True, "cloud_enabled": False,
-        "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True,
-        "battery_enabled": True, "memory_enabled": False, "time_enabled": True,
+        "os_enabled": True,
+        "dev_enabled": True,
+        "container_enabled": True,
+        "cloud_enabled": False,
+        "duration_enabled": True,
+        "cmd_status_enabled": True,
+        "jobs_enabled": True,
+        "battery_enabled": True,
+        "memory_enabled": False,
+        "time_enabled": True,
     },
     "operator": {
-        "os_enabled": True, "dev_enabled": True, "container_enabled": True, "cloud_enabled": True,
-        "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True,
-        "battery_enabled": True, "memory_enabled": False, "time_enabled": True,
+        "os_enabled": True,
+        "dev_enabled": True,
+        "container_enabled": True,
+        "cloud_enabled": True,
+        "duration_enabled": True,
+        "cmd_status_enabled": True,
+        "jobs_enabled": True,
+        "battery_enabled": True,
+        "memory_enabled": False,
+        "time_enabled": True,
     },
 }
 
@@ -137,7 +214,6 @@ def profile():
         return values
     if not isinstance(raw, dict):
         return values
-
     for key, default in DEFAULT.items():
         if key == "version":
             continue
@@ -195,14 +271,10 @@ def _identity_block(p):
 
 
 def _context_format(p):
-    parts = []
-    if p["dev_enabled"]:
-        parts.append("$python$nodejs$rust$golang$java$lua$php$ruby$package")
-    if p["container_enabled"]:
-        parts.append("$docker_context$kubernetes")
-    if p["cloud_enabled"]:
-        parts.append("$terraform$nix_shell$conda$aws$gcloud$azure")
-    return "".join(parts)
+    dev = "$python$nodejs$rust$golang$java$lua$php$ruby$package" if p["dev_enabled"] else ""
+    container = "$docker_context$kubernetes" if p["container_enabled"] else ""
+    cloud = "$terraform$nix_shell$conda$aws$gcloud$azure" if p["cloud_enabled"] else ""
+    return dev + container + cloud
 
 
 def _right_format(p, *, jobs=True, battery=True, time=True):
@@ -215,7 +287,7 @@ def _right_format(p, *, jobs=True, battery=True, time=True):
     ])
 
 
-def _header(style, palette):
+def _header(style):
     return f'''# AUTO-GENERATED by `theme`
 # STARSHIP_STYLE = {style}
 "$schema" = 'https://starship.rs/config-schema.json'
@@ -224,30 +296,30 @@ palette = "theme"
 '''
 
 
-def _palette_block(palette):
+def _palette_block(p):
     return f'''
 [palettes.theme]
-bg = "{palette['bg']}"
-surface = "{palette['surface']}"
-fg = "{palette['fg']}"
-muted = "{palette['muted']}"
-accent = "{palette['accent']}"
-accent2 = "{palette['accent2']}"
-urgent = "{palette['urgent']}"
-warn = "{palette['warn']}"
-success = "{palette['success']}"
+bg = "{p['bg']}"
+surface = "{p['surface']}"
+fg = "{p['fg']}"
+muted = "{p['muted']}"
+accent = "{p['accent']}"
+accent2 = "{p['accent2']}"
+urgent = "{p['urgent']}"
+warn = "{p['warn']}"
+success = "{p['success']}"
 '''
 
 
-def _os_config(style="plain"):
-    if style == "workspace":
-        fmt = "[ $symbol]($style)"
+def _os_config(workspace=False):
+    if workspace:
+        os_format = "[ $symbol]($style)"
         os_style = "bold fg:accent bg:surface"
         user_style = "bold fg:fg bg:surface"
         root_style = "bold fg:urgent bg:surface"
         host_style = "bold fg:accent2 bg:surface"
     else:
-        fmt = "[$symbol]($style)"
+        os_format = "[$symbol]($style)"
         os_style = "bold fg:accent"
         user_style = "bold fg:fg"
         root_style = "bold fg:urgent"
@@ -255,7 +327,7 @@ def _os_config(style="plain"):
     return f'''
 [os]
 disabled = false
-format = "{fmt}"
+format = "{os_format}"
 style = "{os_style}"
 
 [os.symbols]
@@ -284,14 +356,21 @@ style = "{host_style}"
 
 
 def _directory_config(p, style):
-    styles = {
-        "workspace": (f"[ {p['path_icon']} $path ]($style)", "bold fg:bg bg:accent"),
-        "minimal": (f"[{p['path_icon']} $path]($style)", "bold fg:accent"),
-        "hud": (f"[{p['path_icon']} $path]($style)", "bold fg:fg"),
-        "neon": (f"[{p['path_icon']} $path]($style)", "bold fg:accent2"),
-        "operator": (f"[{p['path_icon']} $path]($style)", "bold fg:fg"),
-    }
-    fmt, sty = styles[style]
+    if style == "workspace":
+        fmt = f"[ {p['path_icon']} $path ]($style)"
+        sty = "bold fg:bg bg:accent"
+    elif style == "minimal":
+        fmt = f"[{p['path_icon']} $path]($style)"
+        sty = "bold fg:accent"
+    elif style == "hud":
+        fmt = f"[{p['path_icon']} $path]($style)"
+        sty = "bold fg:fg"
+    elif style == "neon":
+        fmt = f"[{p['path_icon']} $path]($style)"
+        sty = "bold fg:accent2"
+    else:
+        fmt = f"[{p['path_icon']} $path]($style)"
+        sty = "bold fg:fg"
     return f'''
 [directory]
 format = "{fmt}"
@@ -307,44 +386,52 @@ truncate_to_repo = {_bool(p['path_repo_root'])}
 '''
 
 
-def _git_config(p, style):
-    if style == "workspace":
-        branch_fmt, branch_style = "[$symbol$branch(:$remote_branch) ]($style)", "bold fg:bg bg:accent2"
-        commit_fmt, commit_style = f"[{_G['git_commit']} $hash$tag ]($style)", "bold fg:bg bg:accent2"
-        state_fmt, state_style = f"[{p['state_icon']} $state( $progress_current/$progress_total) ]($style)", "bold fg:urgent bg:accent2"
-        status_style = "bold fg:bg bg:accent2"
-        metrics_fmt, metrics_style = "[+$added/-$deleted ]($style)", "bold fg:bg bg:accent2"
-    elif style == "minimal":
-        branch_fmt, branch_style = "[$symbol$branch]($style)", "bold fg:accent2"
-        commit_fmt, commit_style = "", "fg:muted"
-        state_fmt, state_style = f"[ {p['state_icon']} $state]($style)", "bold fg:urgent"
-        status_style = "bold fg:muted"
-        metrics_fmt, metrics_style = "", "fg:muted"
-    elif style == "hud":
-        branch_fmt, branch_style = "[$symbol$branch]($style)", "bold fg:accent2"
-        commit_fmt, commit_style = f"[ {_G['git_commit']} $hash]($style)", "fg:muted"
-        state_fmt, state_style = f"[ {p['state_icon']} $state]($style)", "bold fg:urgent"
-        status_style = "bold fg:accent"
-        metrics_fmt, metrics_style = "[ +$added/-$deleted]($style)", "fg:muted"
-    elif style == "neon":
-        branch_fmt, branch_style = "[$symbol$branch]($style)", "bold fg:accent"
-        commit_fmt, commit_style = f"[ {_G['git_commit']} $hash$tag]($style)", "fg:accent2"
-        state_fmt, state_style = f"[ {p['state_icon']} $state]($style)", "bold fg:urgent"
-        status_style = "bold fg:fg"
-        metrics_fmt, metrics_style = "[ +$added/-$deleted]($style)", "fg:muted"
-    else:
-        branch_fmt, branch_style = "[$symbol$branch(:$remote_branch)]($style)", "bold fg:accent"
-        commit_fmt, commit_style = f"[ {_G['git_commit']} $hash$tag]($style)", "bold fg:accent2"
-        state_fmt, state_style = f"[ {p['state_icon']} $state( $progress_current/$progress_total)]($style)", "bold fg:urgent"
-        status_style = "bold fg:fg"
-        metrics_fmt, metrics_style = "[ +$added/-$deleted]($style)", "fg:muted"
-
+def _legacy_git_config(p):
     return f'''
 [git_branch]
 disabled = {_bool(not p['branch_enabled'])}
 symbol = "{p['branch_icon']} "
-format = "{branch_fmt}"
-style = "{branch_style}"
+format = "[$symbol$branch(:$remote_branch) ]($style)"
+style = "bold fg:bg bg:accent2"
+
+[git_state]
+disabled = {_bool(not p['state_enabled'])}
+format = "[{p['state_icon']} $state( $progress_current/$progress_total) ]($style)"
+style = "bold fg:urgent bg:accent2"
+
+[git_status]
+disabled = {_bool(not p['status_enabled'])}
+format = "([$all_status$ahead_behind]($style))"
+style = "bold fg:bg bg:accent2"
+conflicted = "[{p['status_conflicted']} ${{count}}](bold fg:bg bg:urgent) "
+ahead = "{p['status_ahead']}${{count}} "
+behind = "{p['status_behind']}${{count}} "
+diverged = "{p['status_diverged']}⇡${{ahead_count}}⇣${{behind_count}} "
+untracked = "{p['status_untracked']}${{count}} "
+stashed = "{p['status_stashed']}${{count}} "
+modified = "{p['status_modified']}${{count}} "
+staged = "{p['status_staged']}${{count}} "
+renamed = "{p['status_renamed']}${{count}} "
+deleted = "[{p['status_deleted']}${{count}}](bold fg:bg bg:urgent) "
+'''
+
+
+def _rich_git_config(p, style):
+    colors = {
+        "minimal": ("accent2", "muted", "urgent", "muted", "muted"),
+        "hud": ("accent2", "muted", "urgent", "accent", "muted"),
+        "neon": ("accent", "accent2", "urgent", "fg", "muted"),
+        "operator": ("accent", "accent2", "urgent", "fg", "muted"),
+    }
+    branch_c, commit_c, state_c, status_c, metrics_c = colors[style]
+    commit_fmt = "" if style == "minimal" else f"[ {_G['git_commit']} $hash$tag](fg:{commit_c})"
+    metrics_fmt = "" if style == "minimal" else f"[ +$added/-$deleted](fg:{metrics_c})"
+    remote = "" if style in {"minimal", "hud", "neon"} else "(:$remote_branch)"
+    return f'''
+[git_branch]
+disabled = {_bool(not p['branch_enabled'])}
+symbol = "{p['branch_icon']} "
+format = "[$symbol$branch{remote}](bold fg:{branch_c})"
 
 [git_commit]
 disabled = false
@@ -353,17 +440,14 @@ tag_disabled = false
 tag_symbol = " 󰓹 "
 commit_hash_length = 7
 format = "{commit_fmt}"
-style = "{commit_style}"
 
 [git_state]
 disabled = {_bool(not p['state_enabled'])}
-format = "{state_fmt}"
-style = "{state_style}"
+format = "[ {p['state_icon']} $state( $progress_current/$progress_total)](bold fg:{state_c})"
 
 [git_status]
 disabled = {_bool(not p['status_enabled'])}
-format = "([$all_status$ahead_behind]($style))"
-style = "{status_style}"
+format = "([$all_status$ahead_behind](bold fg:{status_c}))"
 conflicted = "{p['status_conflicted']}${{count}} "
 ahead = "{p['status_ahead']}${{count}} "
 behind = "{p['status_behind']}${{count}} "
@@ -378,14 +462,12 @@ deleted = "{p['status_deleted']}${{count}} "
 [git_metrics]
 disabled = false
 only_nonzero_diffs = true
-added_style = "{metrics_style}"
-deleted_style = "{metrics_style}"
 format = "{metrics_fmt}"
 '''
 
 
 def _context_config():
-    specs = [
+    rows = [
         ("python", _G["python"], "$version", "accent2"),
         ("nodejs", _G["nodejs"], "$version", "accent2"),
         ("rust", _G["rust"], "$version", "accent2"),
@@ -403,23 +485,19 @@ def _context_config():
         ("gcloud", _G["gcloud"], "$account", "accent"),
         ("azure", _G["azure"], "$subscription", "accent"),
     ]
-    blocks = []
-    for name, symbol, value, color in specs:
-        extra = ""
-        if name == "conda":
-            extra = "\nignore_base = true"
-        if name == "azure":
-            extra = "\ndisabled = false"
-        blocks.append(f'''\n[{name}]\nsymbol = "{symbol} "\nformat = "[$symbol{value} ](bold fg:{color})"{extra}\n''')
-    blocks.append(f'''
+    out = []
+    for name, symbol, value, color in rows:
+        extra = "\nignore_base = true" if name == "conda" else "\ndisabled = false" if name == "azure" else ""
+        out.append(f'''\n[{name}]\nsymbol = "{symbol} "\nformat = "[$symbol{value} ](bold fg:{color})"{extra}\n''')
+    out.append(f'''
 [kubernetes]
 disabled = false
 symbol = "{_G['kubernetes']} "
-format = "[$symbol$context( \\\\($namespace\\\\)) ](bold fg:accent2)"
+format = "[$symbol$context( \\($namespace\\)) ](bold fg:accent2)"
 detect_files = ["Chart.yaml", "kustomization.yaml", "skaffold.yaml"]
 detect_folders = [".kube", "k8s"]
 ''')
-    return "".join(blocks)
+    return "".join(out)
 
 
 def _telemetry_config(p):
@@ -482,19 +560,13 @@ vimcmd_visual_symbol = "[{prefix}{p['vim_symbol']}](bold fg:accent2)"
 
 
 def _render_workspace(p, palette):
-    identity = _identity_block(p)
-    context = _context_format(p)
-    right = _right_format(p)
-    return _header("workspace", palette) + f'''
-format = """
-[{p['lead_fade']}](fg:surface){identity}[ ](bg:surface)[{p['lead_arrow']}](fg:surface bg:accent)\\
-$directory\\
-${{custom.git_connector}}$git_branch$git_commit$git_state$git_status$git_metrics${{custom.git_end}}${{custom.path_end}}\\
-{context}$memory_usage\\
-$line_break$character"""
-
-right_format = """({right})"""
-
+    # Preserve the pre-switcher workspace exactly in visible geometry and
+    # module ordering. This is the known-good prompt the style system started from.
+    git = ("$git_branch" if p["branch_enabled"] else "") + ("$git_state" if p["state_enabled"] else "") + ("$git_status" if p["status_enabled"] else "")
+    git_custom = ""
+    if git:
+        git = f"${{custom.git_connector}}{git}${{custom.git_end}}"
+        git_custom = f'''
 [custom.git_connector]
 command = "printf x"
 when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
@@ -504,76 +576,90 @@ format = "[{p['git_connector']}](fg:accent bg:accent2)"
 command = "printf x"
 when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
 format = "[{p['git_end']}](fg:accent2)"
+'''
+    identity = _identity_block(p)
+    context = _context_format(p)
+    right = _right_format(p)
+    right_format = f"({right})" if right else ""
+    return _header("workspace") + f'''
+format = """
+[{p['lead_fade']}](fg:surface){identity}[ ](bg:surface)[{p['lead_arrow']}](fg:surface bg:accent)\
+$directory\
+{git}${{custom.path_end}}\
+{context}$memory_usage\
+$line_break$character"""
 
+right_format = """{right_format}"""
+{git_custom}
 [custom.path_end]
 command = "printf x"
 when = "! git rev-parse --is-inside-work-tree >/dev/null 2>&1"
 format = "[{p['path_end']}](fg:accent)"
-''' + _palette_block(palette) + _os_config("workspace") + _directory_config(p, "workspace") + _git_config(p, "workspace") + _context_config() + _telemetry_config(p) + _character_config(p)
+''' + _palette_block(palette) + _os_config(workspace=True) + _directory_config(p, "workspace") + _legacy_git_config(p) + _context_config() + _telemetry_config(p) + _character_config(p)
 
 
 def _render_minimal(p, palette):
     right = "".join(["$status" if p["cmd_status_enabled"] else "", "$cmd_duration" if p["duration_enabled"] else ""])
-    return _header("minimal", palette) + f'''
+    return _header("minimal") + f'''
 format = """$directory[  ](fg:muted)$git_branch$git_state$git_status$line_break$character"""
 right_format = """{right}"""
-''' + _palette_block(palette) + _os_config("plain") + _directory_config(p, "minimal") + _git_config(p, "minimal") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
+''' + _palette_block(palette) + _os_config() + _directory_config(p, "minimal") + _rich_git_config(p, "minimal") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
 
 
 def _render_hud(p, palette):
-    context = _context_format(p)
-    right_context = "".join(["$jobs" if p["jobs_enabled"] else "", "$battery" if p["battery_enabled"] else "", "$time" if p["time_enabled"] else ""])
     identity = "$os" if p["os_enabled"] else ""
-    right = _right_format(p, jobs=False, battery=False, time=False)
-    return _header("hud", palette) + f'''
-format = """[╭─](bold fg:accent){identity}$directory[  ](fg:muted)$git_branch$git_status$git_metrics{context}$fill{right_context}[─╮](bold fg:accent)$line_break[╰─](bold fg:accent2)$character"""
-right_format = """{right}"""
+    context = _context_format(p)
+    alerts = _right_format(p, jobs=False, battery=False, time=False)
+    telemetry = "".join(["$jobs" if p["jobs_enabled"] else "", "$battery" if p["battery_enabled"] else "", "$time" if p["time_enabled"] else ""])
+    return _header("hud") + f'''
+format = """[╭─](bold fg:accent){identity}$directory[  ](fg:muted)$git_branch$git_status$git_metrics{context}$fill{telemetry}[─╮](bold fg:accent)$line_break[╰─](bold fg:accent2)$character"""
+right_format = """{alerts}"""
 
 [fill]
 symbol = "·"
 style = "fg:muted"
-''' + _palette_block(palette) + _os_config("plain") + _directory_config(p, "hud") + _git_config(p, "hud") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
+''' + _palette_block(palette) + _os_config() + _directory_config(p, "hud") + _rich_git_config(p, "hud") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
 
 
 def _render_neon(p, palette):
     identity = _identity_block(p)
     context = _context_format(p)
-    return _header("neon", palette) + f'''
+    return _header("neon") + f'''
 format = """
-[◢](bold fg:accent)[ SYS ](bold fg:accent){identity}[  ](fg:muted)[PATH ](bold fg:accent2)$directory[  ](fg:muted)[GIT ](bold fg:accent)$git_branch$git_commit$git_state$git_status$git_metrics[ ◣](bold fg:accent)\\
-$line_break[  └─](fg:muted){context}$character"""
+[◢ SYS ](bold fg:accent){identity}[  ](fg:muted)[PATH ](bold fg:accent2)$directory[  ](fg:muted)[GIT ](bold fg:accent)$git_branch$git_commit$git_state$git_status$git_metrics[ ◣](bold fg:accent)\
+$line_break[└─ ENV ](fg:muted){context}$character"""
 right_format = """{_right_format(p)}"""
-''' + _palette_block(palette) + _os_config("plain") + _directory_config(p, "neon") + _git_config(p, "neon") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
+''' + _palette_block(palette) + _os_config() + _directory_config(p, "neon") + _rich_git_config(p, "neon") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
 
 
 def _render_operator(p, palette):
     identity = _identity_block(p)
     context = _context_format(p)
     top_right = "".join(["$battery" if p["battery_enabled"] else "", "$time" if p["time_enabled"] else ""])
-    right = _right_format(p, jobs=True, battery=False, time=False)
-    return _header("operator", palette) + f'''
+    alerts = _right_format(p, jobs=True, battery=False, time=False)
+    return _header("operator") + f'''
 format = """
-[╭─ OPERATOR ](bold fg:accent){identity}$fill{top_right}\\
-$line_break[├─ cwd  ](bold fg:muted)$directory\\
-$line_break[├─ git  ](bold fg:muted)$git_branch$git_commit$git_state$git_status$git_metrics${{custom.git_age}}\\
-$line_break[├─ env  ](bold fg:muted){context}${{custom.project_status}}\\
+[╭─ OPERATOR ](bold fg:accent){identity}$fill{top_right}\
+$line_break[├─ cwd  ](bold fg:muted)$directory\
+$line_break[├─ git  ](bold fg:muted)$git_branch$git_commit$git_state$git_status$git_metrics${{custom.git_age}}\
+$line_break[├─ env  ](bold fg:muted){context}${{custom.project_status}}\
 $line_break[╰─](bold fg:accent)$character"""
-right_format = """{right}"""
+right_format = """{alerts}"""
 
 [fill]
 symbol = "─"
 style = "fg:muted"
 
 [custom.git_age]
-command = "git log -1 --format=%cr 2>/dev/null"
-when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+command = 'git log -1 --format=%cr 2>/dev/null'
+when = 'git rev-parse --is-inside-work-tree >/dev/null 2>&1'
 format = "[ {_G['git_age']} $output](fg:muted)"
 
 [custom.project_status]
-command = "root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1; head -n 1 \"$root/.starship-status\" 2>/dev/null"
-when = "root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1; test -s \"$root/.starship-status\""
+command = 'root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1; head -n 1 "$root/.starship-status" 2>/dev/null'
+when = 'root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1; test -s "$root/.starship-status"'
 format = "[  {_G['project_status']} $output](bold fg:success)"
-''' + _palette_block(palette) + _os_config("plain") + _directory_config(p, "operator") + _git_config(p, "operator") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
+''' + _palette_block(palette) + _os_config() + _directory_config(p, "operator") + _rich_git_config(p, "operator") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
 
 
 def render(colors, settings=None):
