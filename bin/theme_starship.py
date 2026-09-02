@@ -6,8 +6,6 @@ import tempfile
 
 PROFILE_PATH = os.path.join(os.path.expanduser("~"), ".config", "theme-engine", "starship.json")
 
-# Nerd Font glyphs above U+FFFF are built from code points so they survive
-# editors/pipelines that occasionally mangle literal astral characters.
 _G = {
     "folder": chr(0xF024B),
     "git_branch": chr(0xF0418),
@@ -39,18 +37,17 @@ _G = {
     "terraform": chr(0xF1062), "nix": chr(0xF1105), "conda": chr(0xF0C3),
     "aws": chr(0xF0E0F), "azure": chr(0xF0805), "gcloud": chr(0xF11F6),
     "memory": chr(0xF035B), "time": chr(0xF017),
-    "batt_full": chr(0xF0079), "batt_charge": chr(0xF0084),
-    "batt_low": chr(0xF007B),
+    "batt_full": chr(0xF0079), "batt_charge": chr(0xF0084), "batt_low": chr(0xF007B),
     "doc_ico": chr(0xF0219), "dl_ico": chr(0xF01DA), "pic_ico": chr(0xF02E9), "cfg_ico": chr(0xF0493),
 }
 
 STYLE_NAMES = ("workspace", "minimal", "hud", "neon", "operator")
 STYLE_DESCRIPTIONS = {
-    "workspace": "full two-line powerline workspace prompt with rich Git detail",
-    "minimal": "quiet directory + Git prompt that only surfaces useful status",
-    "hud": "single-line dashboard with a dynamic fill bridge and telemetry",
-    "neon": "transparent cyber variant of workspace with thin separators",
-    "operator": "repo console with commit age and optional .starship-status signal",
+    "workspace": "original filled powerline prompt, now with richer Git detail",
+    "minimal": "quiet two-line path + Git prompt with only useful alerts",
+    "hud": "single-line terminal dashboard with dynamic fill and telemetry",
+    "neon": "transparent two-line cyber prompt with angular separators",
+    "operator": "multi-line repo console with Git age and project status",
 }
 
 _STYLE_ALIASES = {
@@ -87,8 +84,6 @@ DEFAULT = {
     "success_symbol": _G["arrow_ok"], "error_symbol": _G["arrow_ok"], "vim_symbol": _G["arrow_vim"],
 }
 
-# Switching styles intentionally applies a coherent module set. The detailed
-# icon/threshold values remain user-editable and are preserved.
 STYLE_PRESETS = {
     "workspace": {
         "os_enabled": True, "dev_enabled": True, "container_enabled": True, "cloud_enabled": True,
@@ -118,25 +113,22 @@ STYLE_PRESETS = {
 }
 
 
-def normalize_style(name: object) -> str:
-    value = str(name or "workspace").strip().lower()
-    value = _STYLE_ALIASES.get(value, value)
-    return value if value in STYLE_NAMES else "workspace"
+def normalize_style(value) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in STYLE_NAMES:
+        return raw
+    return _STYLE_ALIASES.get(raw, "workspace")
 
 
-def apply_style(values: dict, name: str) -> dict:
-    style = normalize_style(name)
-    out = dict(DEFAULT)
-    for key, default in DEFAULT.items():
-        value = values.get(key, default)
-        if type(value) is type(default):
-            out[key] = value
-    out["prompt_style"] = style
-    out.update(STYLE_PRESETS[style])
+def apply_style(values, style: str):
+    name = normalize_style(style)
+    out = dict(values)
+    out["prompt_style"] = name
+    out.update(STYLE_PRESETS[name])
     return out
 
 
-def profile() -> dict:
+def profile():
     values = dict(DEFAULT)
     try:
         with open(PROFILE_PATH, encoding="utf-8") as file:
@@ -145,17 +137,19 @@ def profile() -> dict:
         return values
     if not isinstance(raw, dict):
         return values
+
     for key, default in DEFAULT.items():
         if key == "version":
             continue
         value = raw.get(key, default)
-        if type(value) is type(default):
+        if key == "prompt_style":
+            values[key] = normalize_style(value)
+        elif type(value) is type(default):
             values[key] = value
-    values["prompt_style"] = normalize_style(values.get("prompt_style"))
     return values
 
 
-def save(values: dict) -> None:
+def save(values):
     out = {key: values.get(key, default) for key, default in DEFAULT.items()}
     out["version"] = DEFAULT["version"]
     out["prompt_style"] = normalize_style(out.get("prompt_style"))
@@ -175,26 +169,96 @@ def save(values: dict) -> None:
         raise
 
 
-def _bool(value: object) -> str:
+def _palette(colors):
+    bg = colors["bg"]
+    text = colors["text"]
+    accent = colors.get("accent", text)
+    return {
+        "bg": bg,
+        "surface": colors.get("bg_alt", bg),
+        "fg": text,
+        "muted": colors.get("text_dim", text),
+        "accent": accent,
+        "accent2": colors.get("accent2", accent),
+        "urgent": colors.get("urgent", accent),
+        "warn": colors.get("ansi_yellow", colors.get("warning", accent)),
+        "success": colors.get("ansi_green", colors.get("success", colors.get("accent2", accent))),
+    }
+
+
+def _bool(value):
     return str(bool(value)).lower()
 
 
-def _palette(colors: dict) -> str:
-    return f'''[palettes.theme]
-bg = "{colors['bg']}"
-surface = "{colors['bg_alt']}"
-fg = "{colors['text']}"
-muted = "{colors['text_dim']}"
-accent = "{colors['accent']}"
-accent2 = "{colors['accent2']}"
-urgent = "{colors['urgent']}"
-warn = "{colors.get('ansi_yellow', colors['accent'])}"
-success = "{colors.get('ansi_green', colors['accent2'])}"
+def _identity_block(p):
+    return "$os$username$hostname" if p["os_enabled"] else "$username$hostname"
+
+
+def _context_format(p):
+    parts = []
+    if p["dev_enabled"]:
+        parts.append("$python$nodejs$rust$golang$java$lua$php$ruby$package")
+    if p["container_enabled"]:
+        parts.append("$docker_context$kubernetes")
+    if p["cloud_enabled"]:
+        parts.append("$terraform$nix_shell$conda$aws$gcloud$azure")
+    return "".join(parts)
+
+
+def _right_format(p, *, jobs=True, battery=True, time=True):
+    return "".join([
+        "$status" if p["cmd_status_enabled"] else "",
+        "$cmd_duration" if p["duration_enabled"] else "",
+        "$jobs" if jobs and p["jobs_enabled"] else "",
+        "$battery" if battery and p["battery_enabled"] else "",
+        "$time" if time and p["time_enabled"] else "",
+    ])
+
+
+def _header(style, palette):
+    return f'''# AUTO-GENERATED by `theme`
+# STARSHIP_STYLE = {style}
+"$schema" = 'https://starship.rs/config-schema.json'
+add_newline = false
+palette = "theme"
 '''
 
 
-def _os_symbols() -> str:
-    return f'''[os.symbols]
+def _palette_block(palette):
+    return f'''
+[palettes.theme]
+bg = "{palette['bg']}"
+surface = "{palette['surface']}"
+fg = "{palette['fg']}"
+muted = "{palette['muted']}"
+accent = "{palette['accent']}"
+accent2 = "{palette['accent2']}"
+urgent = "{palette['urgent']}"
+warn = "{palette['warn']}"
+success = "{palette['success']}"
+'''
+
+
+def _os_config(style="plain"):
+    if style == "workspace":
+        fmt = "[ $symbol]($style)"
+        os_style = "bold fg:accent bg:surface"
+        user_style = "bold fg:fg bg:surface"
+        root_style = "bold fg:urgent bg:surface"
+        host_style = "bold fg:accent2 bg:surface"
+    else:
+        fmt = "[$symbol]($style)"
+        os_style = "bold fg:accent"
+        user_style = "bold fg:fg"
+        root_style = "bold fg:urgent"
+        host_style = "bold fg:accent2"
+    return f'''
+[os]
+disabled = false
+format = "{fmt}"
+style = "{os_style}"
+
+[os.symbols]
 Arch = "{_G['os_arch']} "
 CachyOS = "{_G['os_arch']} "
 Debian = "{_G['os_debian']} "
@@ -204,91 +268,182 @@ Mint = "{_G['os_mint']} "
 Linux = "{_G['os_linux']} "
 Macos = "{_G['os_macos']} "
 Windows = "{_G['os_windows']} "
+
+[username]
+format = "[$user]($style)"
+style_user = "{user_style}"
+style_root = "{root_style}"
+show_always = false
+
+[hostname]
+ssh_only = true
+trim_at = "."
+format = "[@$hostname ]($style)"
+style = "{host_style}"
 '''
 
 
-def _dev_modules() -> str:
-    return f'''[python]
-symbol = "{_G['python']} "
-format = "[$symbol$version ](bold fg:accent2)"
-[nodejs]
-symbol = "{_G['nodejs']} "
-format = "[$symbol$version ](bold fg:accent2)"
-[rust]
-symbol = "{_G['rust']} "
-format = "[$symbol$version ](bold fg:accent2)"
-[golang]
-symbol = "{_G['golang']} "
-format = "[$symbol$version ](bold fg:accent2)"
-[java]
-symbol = "{_G['java']} "
-format = "[$symbol$version ](bold fg:accent2)"
-[lua]
-symbol = "{_G['lua']} "
-format = "[$symbol$version ](bold fg:accent2)"
-[php]
-symbol = "{_G['php']} "
-format = "[$symbol$version ](bold fg:accent2)"
-[ruby]
-symbol = "{_G['ruby']} "
-format = "[$symbol$version ](bold fg:accent2)"
-[package]
-symbol = "{_G['package']} "
-format = "[$symbol$version ](bold fg:muted)"
-[docker_context]
-symbol = "{_G['docker']} "
-format = "[$symbol$context ](bold fg:muted)"
+def _directory_config(p, style):
+    styles = {
+        "workspace": (f"[ {p['path_icon']} $path ]($style)", "bold fg:bg bg:accent"),
+        "minimal": (f"[{p['path_icon']} $path]($style)", "bold fg:accent"),
+        "hud": (f"[{p['path_icon']} $path]($style)", "bold fg:fg"),
+        "neon": (f"[{p['path_icon']} $path]($style)", "bold fg:accent2"),
+        "operator": (f"[{p['path_icon']} $path]($style)", "bold fg:fg"),
+    }
+    fmt, sty = styles[style]
+    return f'''
+[directory]
+format = "{fmt}"
+style = "{sty}"
+truncation_length = {int(p['path_length'])}
+truncate_to_repo = {_bool(p['path_repo_root'])}
+
+[directory.substitutions]
+"Documents" = "{_G['doc_ico']} Documents"
+"Downloads" = "{_G['dl_ico']} Downloads"
+"Pictures" = "{_G['pic_ico']} Pictures"
+".config" = "{_G['cfg_ico']} .config"
+'''
+
+
+def _git_config(p, style):
+    if style == "workspace":
+        branch_fmt, branch_style = "[$symbol$branch(:$remote_branch) ]($style)", "bold fg:bg bg:accent2"
+        commit_fmt, commit_style = f"[{_G['git_commit']} $hash$tag ]($style)", "bold fg:bg bg:accent2"
+        state_fmt, state_style = f"[{p['state_icon']} $state( $progress_current/$progress_total) ]($style)", "bold fg:urgent bg:accent2"
+        status_style = "bold fg:bg bg:accent2"
+        metrics_fmt, metrics_style = "[+$added/-$deleted ]($style)", "bold fg:bg bg:accent2"
+    elif style == "minimal":
+        branch_fmt, branch_style = "[$symbol$branch]($style)", "bold fg:accent2"
+        commit_fmt, commit_style = "", "fg:muted"
+        state_fmt, state_style = f"[ {p['state_icon']} $state]($style)", "bold fg:urgent"
+        status_style = "bold fg:muted"
+        metrics_fmt, metrics_style = "", "fg:muted"
+    elif style == "hud":
+        branch_fmt, branch_style = "[$symbol$branch]($style)", "bold fg:accent2"
+        commit_fmt, commit_style = f"[ {_G['git_commit']} $hash]($style)", "fg:muted"
+        state_fmt, state_style = f"[ {p['state_icon']} $state]($style)", "bold fg:urgent"
+        status_style = "bold fg:accent"
+        metrics_fmt, metrics_style = "[ +$added/-$deleted]($style)", "fg:muted"
+    elif style == "neon":
+        branch_fmt, branch_style = "[$symbol$branch]($style)", "bold fg:accent"
+        commit_fmt, commit_style = f"[ {_G['git_commit']} $hash$tag]($style)", "fg:accent2"
+        state_fmt, state_style = f"[ {p['state_icon']} $state]($style)", "bold fg:urgent"
+        status_style = "bold fg:fg"
+        metrics_fmt, metrics_style = "[ +$added/-$deleted]($style)", "fg:muted"
+    else:
+        branch_fmt, branch_style = "[$symbol$branch(:$remote_branch)]($style)", "bold fg:accent"
+        commit_fmt, commit_style = f"[ {_G['git_commit']} $hash$tag]($style)", "bold fg:accent2"
+        state_fmt, state_style = f"[ {p['state_icon']} $state( $progress_current/$progress_total)]($style)", "bold fg:urgent"
+        status_style = "bold fg:fg"
+        metrics_fmt, metrics_style = "[ +$added/-$deleted]($style)", "fg:muted"
+
+    return f'''
+[git_branch]
+disabled = {_bool(not p['branch_enabled'])}
+symbol = "{p['branch_icon']} "
+format = "{branch_fmt}"
+style = "{branch_style}"
+
+[git_commit]
+disabled = false
+only_detached = false
+tag_disabled = false
+tag_symbol = " 󰓹 "
+commit_hash_length = 7
+format = "{commit_fmt}"
+style = "{commit_style}"
+
+[git_state]
+disabled = {_bool(not p['state_enabled'])}
+format = "{state_fmt}"
+style = "{state_style}"
+
+[git_status]
+disabled = {_bool(not p['status_enabled'])}
+format = "([$all_status$ahead_behind]($style))"
+style = "{status_style}"
+conflicted = "{p['status_conflicted']}${{count}} "
+ahead = "{p['status_ahead']}${{count}} "
+behind = "{p['status_behind']}${{count}} "
+diverged = "{p['status_diverged']}⇡${{ahead_count}}⇣${{behind_count}} "
+untracked = "{p['status_untracked']}${{count}} "
+stashed = "{p['status_stashed']}${{count}} "
+modified = "{p['status_modified']}${{count}} "
+staged = "{p['status_staged']}${{count}} "
+renamed = "{p['status_renamed']}${{count}} "
+deleted = "{p['status_deleted']}${{count}} "
+
+[git_metrics]
+disabled = false
+only_nonzero_diffs = true
+added_style = "{metrics_style}"
+deleted_style = "{metrics_style}"
+format = "{metrics_fmt}"
+'''
+
+
+def _context_config():
+    specs = [
+        ("python", _G["python"], "$version", "accent2"),
+        ("nodejs", _G["nodejs"], "$version", "accent2"),
+        ("rust", _G["rust"], "$version", "accent2"),
+        ("golang", _G["golang"], "$version", "accent2"),
+        ("java", _G["java"], "$version", "accent2"),
+        ("lua", _G["lua"], "$version", "accent2"),
+        ("php", _G["php"], "$version", "accent2"),
+        ("ruby", _G["ruby"], "$version", "accent2"),
+        ("package", _G["package"], "$version", "muted"),
+        ("docker_context", _G["docker"], "$context", "muted"),
+        ("terraform", _G["terraform"], "$workspace", "muted"),
+        ("nix_shell", _G["nix"], "$state", "muted"),
+        ("conda", _G["conda"], "$environment", "muted"),
+        ("aws", _G["aws"], "$profile", "accent"),
+        ("gcloud", _G["gcloud"], "$account", "accent"),
+        ("azure", _G["azure"], "$subscription", "accent"),
+    ]
+    blocks = []
+    for name, symbol, value, color in specs:
+        extra = ""
+        if name == "conda":
+            extra = "\nignore_base = true"
+        if name == "azure":
+            extra = "\ndisabled = false"
+        blocks.append(f'''\n[{name}]\nsymbol = "{symbol} "\nformat = "[$symbol{value} ](bold fg:{color})"{extra}\n''')
+    blocks.append(f'''
 [kubernetes]
 disabled = false
 symbol = "{_G['kubernetes']} "
-format = '[$symbol$context( \\($namespace\\)) ](bold fg:accent2)'
+format = "[$symbol$context( \\\\($namespace\\\\)) ](bold fg:accent2)"
 detect_files = ["Chart.yaml", "kustomization.yaml", "skaffold.yaml"]
 detect_folders = [".kube", "k8s"]
-[terraform]
-symbol = "{_G['terraform']} "
-format = "[$symbol$workspace ](bold fg:muted)"
-[nix_shell]
-symbol = "{_G['nix']} "
-format = "[$symbol$state ](bold fg:muted)"
-[conda]
-symbol = "{_G['conda']} "
-format = "[$symbol$environment ](bold fg:muted)"
-ignore_base = true
-[aws]
-symbol = "{_G['aws']} "
-format = "[$symbol$profile ](bold fg:accent)"
-[gcloud]
-symbol = "{_G['gcloud']} "
-format = "[$symbol$account ](bold fg:accent)"
-[azure]
-disabled = false
-symbol = "{_G['azure']} "
-format = "[$symbol$subscription ](bold fg:accent)"
-'''
+''')
+    return "".join(blocks)
 
 
-def _telemetry(p: dict, *, right_padding: bool = True) -> str:
-    pad = " " if right_padding else ""
-    return f'''[memory_usage]
+def _telemetry_config(p):
+    return f'''
+[memory_usage]
 disabled = {_bool(not p['memory_enabled'])}
 threshold = {int(p['memory_threshold'])}
 symbol = "{_G['memory']} "
-format = "[{pad}$symbol$ram](bold fg:urgent)"
+format = "[$symbol$ram ](bold fg:urgent)"
 
 [cmd_duration]
 disabled = {_bool(not p['duration_enabled'])}
 min_time = {int(p['duration_min_ms'])}
-format = "[{pad}{p['duration_icon']} $duration](bold fg:fg)"
+format = "[ {p['duration_icon']} $duration ](bold fg:fg)"
 
 [status]
 disabled = {_bool(not p['cmd_status_enabled'])}
 success_symbol = ""
-format = "[{pad}{p['cmd_status_icon']} $status](bold fg:urgent)"
+format = "[ {p['cmd_status_icon']} $status ](bold fg:urgent)"
 
 [jobs]
 disabled = {_bool(not p['jobs_enabled'])}
 symbol = "{p['jobs_icon']} "
-format = "[{pad}$symbol$number](bold fg:accent)"
+format = "[$symbol$number ](bold fg:accent)"
 
 [[battery.display]]
 threshold = 20
@@ -304,382 +459,133 @@ disabled = {_bool(not p['battery_enabled'])}
 full_symbol = "{_G['batt_full']} "
 charging_symbol = "{_G['batt_charge']} "
 discharging_symbol = "{_G['batt_full']} "
-format = "[{pad}$symbol$percentage]($style)"
+format = "[$symbol$percentage]($style)"
 
 [time]
 disabled = {_bool(not p['time_enabled'])}
 time_format = "%I:%M %p"
-format = "[{pad}{_G['time']} $time](bold fg:warn)"
+format = "[ {_G['time']} $time ](bold fg:warn)"
 '''
 
 
-def _git_status_block(p: dict, *, background: str | None = None) -> str:
-    bg = f" bg:{background}" if background else ""
-    default_style = f"bold fg:bg{bg}" if background else "bold fg:accent2"
-    urgent_style = f"bold fg:bg bg:urgent" if background else "bold fg:urgent"
-    return f'''[git_state]
-disabled = {_bool(not p['state_enabled'])}
-format = "[{p['state_icon']} $state( $progress_current/$progress_total) ]($style)"
-style = "bold fg:urgent{bg}"
-
-[git_status]
-disabled = {_bool(not p['status_enabled'])}
-format = "([$all_status$ahead_behind]($style))"
-style = "{default_style}"
-conflicted = "[{p['status_conflicted']} ${{count}}]({urgent_style}) "
-ahead = "{p['status_ahead']}${{count}} "
-behind = "{p['status_behind']}${{count}} "
-diverged = "{p['status_diverged']}⇡${{ahead_count}}⇣${{behind_count}} "
-untracked = "{p['status_untracked']}${{count}} "
-stashed = "{p['status_stashed']}${{count}} "
-modified = "{p['status_modified']}${{count}} "
-staged = "{p['status_staged']}${{count}} "
-renamed = "{p['status_renamed']}${{count}} "
-deleted = "[{p['status_deleted']}${{count}}]({urgent_style}) "
+def _character_config(p, compact=False):
+    prefix = "" if compact else "╰─ "
+    return f'''
+[character]
+success_symbol = "[{prefix}{p['success_symbol']}](bold fg:accent)"
+error_symbol = "[{prefix}{p['error_symbol']}](bold fg:urgent)"
+vimcmd_symbol = "[{prefix}{p['vim_symbol']}](bold fg:accent2)"
+vimcmd_replace_one_symbol = "[{prefix}{p['vim_symbol']}](bold fg:urgent)"
+vimcmd_replace_symbol = "[{prefix}{p['vim_symbol']}](bold fg:urgent)"
+vimcmd_visual_symbol = "[{prefix}{p['vim_symbol']}](bold fg:accent2)"
 '''
 
 
-def _workspace(p: dict, colors: dict) -> str:
-    git = "$git_branch$git_commit$git_state$git_status$git_metrics"
-    dev = "$python$nodejs$rust$golang$java$lua$php$ruby$package" if p["dev_enabled"] else ""
-    container = "$docker_context$kubernetes" if p["container_enabled"] else ""
-    cloud = "$terraform$nix_shell$conda$aws$gcloud$azure" if p["cloud_enabled"] else ""
-    os_block = "$os$username$hostname" if p["os_enabled"] else "$username$hostname"
-    right = "".join([
-        "$status" if p["cmd_status_enabled"] else "",
-        "$cmd_duration" if p["duration_enabled"] else "",
-        "$jobs" if p["jobs_enabled"] else "",
-        "$battery" if p["battery_enabled"] else "",
-        "$time" if p["time_enabled"] else "",
-    ])
-    return f'''# AUTO-GENERATED by `theme`
-# STARSHIP_STYLE = workspace
-"$schema" = 'https://starship.rs/config-schema.json'
-add_newline = false
-scan_timeout = 30
-command_timeout = 500
-palette = "theme"
+def _render_workspace(p, palette):
+    identity = _identity_block(p)
+    context = _context_format(p)
+    right = _right_format(p)
+    return _header("workspace", palette) + f'''
 format = """
-[{p['lead_fade']}](fg:surface){os_block}[ ](bg:surface)[{p['lead_arrow']}](fg:surface bg:accent)\
-$directory\
-${{custom.git_connector}}{git}${{custom.git_end}}${{custom.path_end}}\
-{dev}{container}{cloud}$memory_usage\
+[{p['lead_fade']}](fg:surface){identity}[ ](bg:surface)[{p['lead_arrow']}](fg:surface bg:accent)\\
+$directory\\
+${{custom.git_connector}}$git_branch$git_commit$git_state$git_status$git_metrics${{custom.git_end}}${{custom.path_end}}\\
+{context}$memory_usage\\
 $line_break$character"""
-right_format = """({right})"""
 
-{_palette(colors)}
-[os]
-disabled = {_bool(not p['os_enabled'])}
-format = "[ $symbol]($style)"
-style = "bold fg:accent bg:surface"
-{_os_symbols()}
-[username]
-format = "[$user]($style)"
-style_user = "bold fg:fg bg:surface"
-style_root = "bold fg:urgent bg:surface"
-show_always = false
-[hostname]
-ssh_only = true
-trim_at = "."
-format = "[@$hostname ]($style)"
-style = "bold fg:accent2 bg:surface"
-[directory]
-format = "[ {p['path_icon']} $path ]($style)"
-style = "bold fg:bg bg:accent"
-truncation_length = {int(p['path_length'])}
-truncate_to_repo = {_bool(p['path_repo_root'])}
-[directory.substitutions]
-"Documents" = "{_G['doc_ico']} Documents"
-"Downloads" = "{_G['dl_ico']} Downloads"
-"Pictures" = "{_G['pic_ico']} Pictures"
-".config" = "{_G['cfg_ico']} .config"
+right_format = """({right})"""
 
 [custom.git_connector]
 command = "printf x"
 when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
 format = "[{p['git_connector']}](fg:accent bg:accent2)"
+
 [custom.git_end]
 command = "printf x"
 when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
 format = "[{p['git_end']}](fg:accent2)"
+
 [custom.path_end]
 command = "printf x"
 when = "! git rev-parse --is-inside-work-tree >/dev/null 2>&1"
 format = "[{p['path_end']}](fg:accent)"
-
-[git_branch]
-disabled = {_bool(not p['branch_enabled'])}
-symbol = "{p['branch_icon']} "
-format = "[$symbol$branch(:$remote_branch) ]($style)"
-style = "bold fg:bg bg:accent2"
-[git_commit]
-commit_hash_length = 6
-only_detached = false
-tag_disabled = false
-tag_symbol = " 󰓹 "
-format = "[{_G['git_commit']} $hash$tag ](bold fg:bg bg:accent2)"
-{_git_status_block(p, background='accent2')}
-[git_metrics]
-disabled = false
-only_nonzero_diffs = true
-format = "([+$added](bold fg:success bg:accent2) )([-$deleted](bold fg:urgent bg:accent2) )"
-
-{_dev_modules()}
-{_telemetry(p)}
-[character]
-success_symbol = "[╰─ {p['success_symbol']}](bold fg:accent)"
-error_symbol = "[╰─ {p['error_symbol']}](bold fg:urgent)"
-vimcmd_symbol = "[╰─ {p['vim_symbol']}](bold fg:accent2)"
-vimcmd_replace_one_symbol = "[╰─ {p['vim_symbol']}](bold fg:urgent)"
-vimcmd_replace_symbol = "[╰─ {p['vim_symbol']}](bold fg:urgent)"
-vimcmd_visual_symbol = "[╰─ {p['vim_symbol']}](bold fg:accent2)"
-'''
+''' + _palette_block(palette) + _os_config("workspace") + _directory_config(p, "workspace") + _git_config(p, "workspace") + _context_config() + _telemetry_config(p) + _character_config(p)
 
 
-def _minimal(p: dict, colors: dict) -> str:
+def _render_minimal(p, palette):
     right = "".join(["$status" if p["cmd_status_enabled"] else "", "$cmd_duration" if p["duration_enabled"] else ""])
-    return f'''# AUTO-GENERATED by `theme`
-# STARSHIP_STYLE = minimal
-"$schema" = 'https://starship.rs/config-schema.json'
-add_newline = false
-scan_timeout = 20
-command_timeout = 300
-palette = "theme"
-format = """$hostname$directory$git_branch$git_state$git_status$line_break$character"""
-right_format = """({right})"""
-
-{_palette(colors)}
-[hostname]
-ssh_only = true
-format = "[@$hostname ](bold fg:muted)"
-[directory]
-format = "[{p['path_icon']} $path](bold fg:accent) "
-truncation_length = {max(3, int(p['path_length']))}
-truncate_to_repo = {_bool(p['path_repo_root'])}
-[git_branch]
-disabled = {_bool(not p['branch_enabled'])}
-symbol = "{p['branch_icon']} "
-format = "[$symbol$branch](bold fg:accent2) "
-{_git_status_block(p)}
-{_telemetry(p, right_padding=False)}
-[character]
-success_symbol = "[{p['success_symbol']}](bold fg:accent)"
-error_symbol = "[{p['error_symbol']}](bold fg:urgent)"
-vimcmd_symbol = "[{p['vim_symbol']}](bold fg:accent2)"
-'''
+    return _header("minimal", palette) + f'''
+format = """$directory[  ](fg:muted)$git_branch$git_state$git_status$line_break$character"""
+right_format = """{right}"""
+''' + _palette_block(palette) + _os_config("plain") + _directory_config(p, "minimal") + _git_config(p, "minimal") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
 
 
-def _hud(p: dict, colors: dict) -> str:
-    dev = "$python$nodejs$rust$golang$java$lua$php$ruby" if p["dev_enabled"] else ""
-    right = "".join([
-        "$status" if p["cmd_status_enabled"] else "",
-        "$cmd_duration" if p["duration_enabled"] else "",
-        "$jobs" if p["jobs_enabled"] else "",
-        "$battery" if p["battery_enabled"] else "",
-        "$time" if p["time_enabled"] else "",
-    ])
-    return f'''# AUTO-GENERATED by `theme`
-# STARSHIP_STYLE = hud
-"$schema" = 'https://starship.rs/config-schema.json'
-add_newline = false
-scan_timeout = 30
-command_timeout = 500
-palette = "theme"
-format = """$os$directory$git_branch$git_status$git_metrics{dev}$fill{right}$line_break$character"""
-right_format = ""
+def _render_hud(p, palette):
+    context = _context_format(p)
+    right_context = "".join(["$jobs" if p["jobs_enabled"] else "", "$battery" if p["battery_enabled"] else "", "$time" if p["time_enabled"] else ""])
+    identity = "$os" if p["os_enabled"] else ""
+    right = _right_format(p, jobs=False, battery=False, time=False)
+    return _header("hud", palette) + f'''
+format = """[╭─](bold fg:accent){identity}$directory[  ](fg:muted)$git_branch$git_status$git_metrics{context}$fill{right_context}[─╮](bold fg:accent)$line_break[╰─](bold fg:accent2)$character"""
+right_format = """{right}"""
 
-{_palette(colors)}
 [fill]
 symbol = "·"
 style = "fg:muted"
-[os]
-disabled = {_bool(not p['os_enabled'])}
-format = "[$symbol](bold fg:accent) "
-{_os_symbols()}
-[directory]
-format = "[{p['path_icon']} $path](bold fg:fg) "
-truncation_length = {int(p['path_length'])}
-truncate_to_repo = {_bool(p['path_repo_root'])}
-[git_branch]
-disabled = {_bool(not p['branch_enabled'])}
-symbol = "{p['branch_icon']} "
-format = "[$symbol$branch](bold fg:accent2) "
-[git_status]
-disabled = {_bool(not p['status_enabled'])}
-format = "[$all_status$ahead_behind](bold fg:urgent) "
-conflicted = "{p['status_conflicted']}${{count}} "
-ahead = "{p['status_ahead']}${{count}} "
-behind = "{p['status_behind']}${{count}} "
-diverged = "{p['status_diverged']}⇡${{ahead_count}}⇣${{behind_count}} "
-untracked = "{p['status_untracked']}${{count}} "
-stashed = "{p['status_stashed']}${{count}} "
-modified = "{p['status_modified']}${{count}} "
-staged = "{p['status_staged']}${{count}} "
-renamed = "{p['status_renamed']}${{count}} "
-deleted = "{p['status_deleted']}${{count}} "
-[git_metrics]
-disabled = false
-only_nonzero_diffs = true
-format = "([+$added](bold fg:success) )([-$deleted](bold fg:urgent) )"
-{_dev_modules()}
-{_telemetry(p)}
-[character]
-success_symbol = "[╰─ {p['success_symbol']}](bold fg:accent)"
-error_symbol = "[╰─ {p['error_symbol']}](bold fg:urgent)"
-vimcmd_symbol = "[╰─ {p['vim_symbol']}](bold fg:accent2)"
-'''
+''' + _palette_block(palette) + _os_config("plain") + _directory_config(p, "hud") + _git_config(p, "hud") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
 
 
-def _neon(p: dict, colors: dict) -> str:
-    dev = "$python$nodejs$rust$golang$java$lua$php$ruby$package" if p["dev_enabled"] else ""
-    container = "$docker_context$kubernetes" if p["container_enabled"] else ""
-    right = "".join([
-        "$status" if p["cmd_status_enabled"] else "",
-        "$cmd_duration" if p["duration_enabled"] else "",
-        "$jobs" if p["jobs_enabled"] else "",
-        "$battery" if p["battery_enabled"] else "",
-        "$time" if p["time_enabled"] else "",
-    ])
-    return f'''# AUTO-GENERATED by `theme`
-# STARSHIP_STYLE = neon
-"$schema" = 'https://starship.rs/config-schema.json'
-add_newline = false
-scan_timeout = 30
-command_timeout = 500
-palette = "theme"
-format = """$os$username$hostname$directory${{custom.neon_sep}}$git_branch$git_commit$git_status$git_metrics${{custom.neon_sep_git}}{dev}{container}$line_break$character"""
-right_format = """({right})"""
-
-{_palette(colors)}
-[os]
-disabled = {_bool(not p['os_enabled'])}
-format = "[$symbol](bold fg:accent)"
-{_os_symbols()}
-[username]
-show_always = false
-format = "[$user](bold fg:fg)"
-[hostname]
-ssh_only = true
-format = "[@$hostname](bold fg:accent2)"
-[directory]
-format = "[ {p['path_icon']} $path](bold fg:accent)"
-truncation_length = {int(p['path_length'])}
-truncate_to_repo = {_bool(p['path_repo_root'])}
-[custom.neon_sep]
-command = "printf x"
-when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
-format = " [](fg:muted) "
-[custom.neon_sep_git]
-command = "printf x"
-when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
-format = "[](fg:muted) "
-[git_branch]
-disabled = {_bool(not p['branch_enabled'])}
-symbol = "{p['branch_icon']} "
-format = "[$symbol$branch](bold fg:accent2) "
-[git_commit]
-commit_hash_length = 5
-only_detached = false
-tag_disabled = false
-tag_symbol = " 󰓹 "
-format = "[{_G['git_commit']} $hash$tag](fg:muted) "
-{_git_status_block(p)}
-[git_metrics]
-disabled = false
-format = "([+$added](fg:success) )([-$deleted](fg:urgent) )"
-{_dev_modules()}
-{_telemetry(p)}
-[character]
-success_symbol = "[╰─](fg:muted) [{p['success_symbol']}](bold fg:accent)"
-error_symbol = "[╰─](fg:muted) [{p['error_symbol']}](bold fg:urgent)"
-vimcmd_symbol = "[╰─](fg:muted) [{p['vim_symbol']}](bold fg:accent2)"
-'''
+def _render_neon(p, palette):
+    identity = _identity_block(p)
+    context = _context_format(p)
+    return _header("neon", palette) + f'''
+format = """
+[◢](bold fg:accent)[ SYS ](bold fg:accent){identity}[  ](fg:muted)[PATH ](bold fg:accent2)$directory[  ](fg:muted)[GIT ](bold fg:accent)$git_branch$git_commit$git_state$git_status$git_metrics[ ◣](bold fg:accent)\\
+$line_break[  └─](fg:muted){context}$character"""
+right_format = """{_right_format(p)}"""
+''' + _palette_block(palette) + _os_config("plain") + _directory_config(p, "neon") + _git_config(p, "neon") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
 
 
-def _operator(p: dict, colors: dict) -> str:
-    dev = "$python$nodejs$rust$golang$java$lua$php$ruby$package" if p["dev_enabled"] else ""
-    container = "$docker_context$kubernetes" if p["container_enabled"] else ""
-    cloud = "$terraform$nix_shell$conda$aws$gcloud$azure" if p["cloud_enabled"] else ""
-    right = "".join([
-        "$status" if p["cmd_status_enabled"] else "",
-        "$cmd_duration" if p["duration_enabled"] else "",
-        "$jobs" if p["jobs_enabled"] else "",
-        "$battery" if p["battery_enabled"] else "",
-        "$time" if p["time_enabled"] else "",
-    ])
-    return f'''# AUTO-GENERATED by `theme`
-# STARSHIP_STYLE = operator
-"$schema" = 'https://starship.rs/config-schema.json'
-add_newline = false
-scan_timeout = 30
-command_timeout = 700
-palette = "theme"
-format = """[╭─](fg:muted) $os$directory$git_branch$git_commit$git_status$git_metrics$fill{right}
-[│](fg:muted) ${{custom.git_age}}${{custom.project_status}}{dev}{container}{cloud}
-$character"""
-right_format = ""
+def _render_operator(p, palette):
+    identity = _identity_block(p)
+    context = _context_format(p)
+    top_right = "".join(["$battery" if p["battery_enabled"] else "", "$time" if p["time_enabled"] else ""])
+    right = _right_format(p, jobs=True, battery=False, time=False)
+    return _header("operator", palette) + f'''
+format = """
+[╭─ OPERATOR ](bold fg:accent){identity}$fill{top_right}\\
+$line_break[├─ cwd  ](bold fg:muted)$directory\\
+$line_break[├─ git  ](bold fg:muted)$git_branch$git_commit$git_state$git_status$git_metrics${{custom.git_age}}\\
+$line_break[├─ env  ](bold fg:muted){context}${{custom.project_status}}\\
+$line_break[╰─](bold fg:accent)$character"""
+right_format = """{right}"""
 
-{_palette(colors)}
 [fill]
 symbol = "─"
 style = "fg:muted"
-[os]
-disabled = {_bool(not p['os_enabled'])}
-format = "[$symbol](bold fg:accent) "
-{_os_symbols()}
-[directory]
-format = "[{p['path_icon']} $path](bold fg:fg) "
-truncation_length = {int(p['path_length'])}
-truncate_to_repo = {_bool(p['path_repo_root'])}
-[git_branch]
-disabled = {_bool(not p['branch_enabled'])}
-symbol = "{p['branch_icon']} "
-format = "[$symbol$branch(:$remote_branch)](bold fg:accent2) "
-[git_commit]
-commit_hash_length = 7
-only_detached = false
-tag_disabled = false
-tag_symbol = " 󰓹 "
-format = "[{_G['git_commit']} $hash$tag](fg:muted) "
-{_git_status_block(p)}
-[git_metrics]
-disabled = false
-only_nonzero_diffs = true
-format = "([+$added](bold fg:success) )([-$deleted](bold fg:urgent) )"
+
 [custom.git_age]
 command = "git log -1 --format=%cr 2>/dev/null"
 when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
-format = "[{_G['git_age']} $output](fg:muted) "
+format = "[ {_G['git_age']} $output](fg:muted)"
+
 [custom.project_status]
-command = 'root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1; cat "$root/.starship-status"'
-when = 'root=$(git rev-parse --show-toplevel 2>/dev/null) && test -s "$root/.starship-status"'
-format = "[{_G['project_status']} $output](bold fg:accent2) "
-{_dev_modules()}
-{_telemetry(p)}
-[character]
-success_symbol = "[╰─ {p['success_symbol']}](bold fg:accent)"
-error_symbol = "[╰─ {p['error_symbol']}](bold fg:urgent)"
-vimcmd_symbol = "[╰─ {p['vim_symbol']}](bold fg:accent2)"
-'''
+command = "root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1; head -n 1 \"$root/.starship-status\" 2>/dev/null"
+when = "root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1; test -s \"$root/.starship-status\""
+format = "[  {_G['project_status']} $output](bold fg:success)"
+''' + _palette_block(palette) + _os_config("plain") + _directory_config(p, "operator") + _git_config(p, "operator") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
 
 
-def render(colors: dict, settings: dict | None = None) -> str:
-    """Render the selected Starship layout using the active desktop palette."""
-    if settings is None:
-        p = profile()
-    else:
-        p = dict(DEFAULT)
-        for key, default in DEFAULT.items():
-            value = settings.get(key, default)
-            if type(value) is type(default):
-                p[key] = value
-        p["prompt_style"] = normalize_style(p.get("prompt_style"))
+def render(colors, settings=None):
+    p = profile() if settings is None else dict(settings)
     style = normalize_style(p.get("prompt_style"))
+    p["prompt_style"] = style
+    palette = _palette(colors)
     renderers = {
-        "workspace": _workspace,
-        "minimal": _minimal,
-        "hud": _hud,
-        "neon": _neon,
-        "operator": _operator,
+        "workspace": _render_workspace,
+        "minimal": _render_minimal,
+        "hud": _render_hud,
+        "neon": _render_neon,
+        "operator": _render_operator,
     }
-    return renderers[style](p, colors)
+    return renderers[style](p, palette)
