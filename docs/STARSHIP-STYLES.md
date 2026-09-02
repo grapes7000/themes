@@ -20,7 +20,7 @@ The style name may also be used directly, for example `theme starship hud`. `the
 
 ### workspace
 
-The original two-line filled Powerline prompt is preserved as the default. It keeps the OS Nerd Font symbol and the same identity → directory → Git geometry. Git now also exposes the current commit hash/tag, tracking branch, operation state, counted status, and added/deleted line metrics when available. Right-side status, duration, jobs, battery, and time remain transparent.
+The original known-good two-line filled Powerline prompt is preserved as the default. Its visible module order and geometry match the pre-switcher renderer: OS Nerd Font symbol / identity → directory → Git branch/state/status → development context, with transparent status, duration, jobs, battery, and time on the right. Richer commit-hash and diff-metric experiments live in the alternate layouts instead of changing `workspace`.
 
 ### minimal
 
