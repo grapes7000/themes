@@ -61,9 +61,11 @@ install -m755 "$REPO/bin/theme-studio" "$HOME/.local/bin/theme"
 for t in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image; do
     install -m755 "$REPO/bin/$t" "$HOME/.local/bin/$t"
 done
-for module in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py; do
+for module in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py theme_ui.py; do
     install -m644 "$REPO/bin/$module" "$HOME/.local/bin/$module"
 done
+mkdir -p "$CFG/theme-engine/ui-styles"
+install -m644 "$REPO"/ui-styles/*.json "$CFG/theme-engine/ui-styles/"
 for module in theme_schema.py theme_preview.py theme_waybar.py theme_components.py theme_tui_widgets.py theme_tui.py; do
     install -m644 "$STUDIO_TMP/$module" "$HOME/.local/bin/$module"
 done

@@ -11,6 +11,7 @@ import sys
 import tempfile
 
 import theme_runtime
+import theme_ui
 from theme_schema import validation_summary, validate_theme
 
 
@@ -31,6 +32,7 @@ Compatible commands:
   theme homepage ...        Existing homepage commands
   theme font ...            Existing font commands
   theme wallpaper ...       Semantic wallpaper template commands
+  theme ui ...              Application UI-style profile commands
 
 Wallpaper templates:
   theme wallpaper                   Show active template
@@ -274,6 +276,23 @@ def validate(name: str | None) -> int:
     return 1 if errors else 0
 
 
+def _active_theme_data() -> tuple[str | None, dict | None]:
+    name = theme_runtime.active_theme()
+    if not name:
+        return None, None
+    try:
+        return name, theme_runtime.load_theme(name)
+    except Exception:
+        return name, None
+
+
+def _publish_ui_style(name: str, theme: dict) -> None:
+    try:
+        theme_ui.publish(theme, name)
+    except Exception as exc:
+        print(f"theme: UI-style warning: {exc}", file=sys.stderr)
+
+
 def main() -> int:
     args = sys.argv[1:]
     if not args:
@@ -291,6 +310,13 @@ def main() -> int:
         return run_legacy(args[1:])
     if args[0] == "wallpaper":
         return wallpaper(args[1:])
+    if args[0] == "ui":
+        name, theme = _active_theme_data()
+        try:
+            return theme_ui.command(args[1:], theme, name)
+        except Exception as exc:
+            print(f"theme ui: {exc}", file=sys.stderr)
+            return 2
 
     passthrough = {"shape", "texture", "anim", "effects", "homepage", "font", "starship", "-l", "--list"}
     if args[0] in passthrough or args[0].startswith("-"):
@@ -314,6 +340,7 @@ def main() -> int:
         return 1
     if result.get("legacy_message"):
         print(result["legacy_message"])
+    _publish_ui_style(args[0], theme_runtime.load_theme(args[0]))
     print(f"Theme Studio overrides applied: {args[0]}")
     return 0
 

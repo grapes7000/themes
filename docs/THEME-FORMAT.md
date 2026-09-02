@@ -1,16 +1,31 @@
 # The `theme.json` format
 
 Every theme is a single JSON file in `themes/<name>.json` with four top-level
-keys: `name`, `dark`, `roles`, `style`.
+keys: `name`, `dark`, `roles`, `style`. A theme may also recommend an
+application UI style with `ui_style`.
 
 ```jsonc
 {
   "name": "catppuccin_mocha",
   "dark": true,
+  "ui_style": "precision",
   "roles":  { /* colors  */ },
   "style":  { /* feel    */ }
 }
 ```
+
+---
+
+## `ui_style` — optional application layout grammar
+
+Colors and application geometry are independent. `ui_style` optionally selects
+a profile from `ui-styles/`; applications such as Qt/QML and Quickshell can
+read the generated contract at `~/.config/theme-engine/generated/ui-style.json`.
+
+Use `theme ui --list` to inspect installed profiles, `theme ui <profile>` to
+override the active theme, and `theme ui auto` to follow the active theme's
+recommendation (falling back to `precision`). Explicit overrides win over a
+theme recommendation.
 
 ---
 
