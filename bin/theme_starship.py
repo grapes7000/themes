@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import colorsys
 import json
 import os
 import tempfile
@@ -8,7 +9,7 @@ PROFILE_PATH = os.path.join(os.path.expanduser("~"), ".config", "theme-engine", 
 
 _G = {
     "folder": chr(0xF024B),
-    "git_branch": chr(0xF0418),
+    "git_branch": chr(0xF418),
     "git_state": chr(0xF062C),
     "git_commit": chr(0xF0718),
     "git_age": chr(0xF051B),
@@ -28,14 +29,14 @@ _G = {
     "status_fail": chr(0xF0159),
     "arrow_ok": chr(0x276F),
     "arrow_vim": chr(0x276E),
-    "os_arch": chr(0xF0303),
-    "os_debian": chr(0xF0306),
-    "os_fedora": chr(0xF030A),
-    "os_ubuntu": chr(0xF031B),
-    "os_mint": chr(0xF030E),
-    "os_linux": chr(0xF031A),
-    "os_macos": chr(0xF0179),
-    "os_windows": chr(0xF017A),
+    "os_arch": chr(0xF303),
+    "os_debian": chr(0xF306),
+    "os_fedora": chr(0xF30A),
+    "os_ubuntu": chr(0xF31B),
+    "os_mint": chr(0xF30E),
+    "os_linux": chr(0xF31A),
+    "os_macos": chr(0xF179),
+    "os_windows": chr(0xF17A),
     "python": chr(0xE73C),
     "nodejs": chr(0xE718),
     "rust": chr(0xE7A8),
@@ -64,24 +65,27 @@ _G = {
     "cfg_ico": chr(0xF0493),
 }
 
-STYLE_NAMES = ("workspace", "minimal", "hud", "neon", "operator")
+STYLE_NAMES = ("workspace", "minimal", "hud", "muted", "neon", "operator")
 STYLE_DESCRIPTIONS = {
     "workspace": "the original filled Powerline prompt, unchanged",
     "minimal": "quiet two-line directory + Git prompt",
     "hud": "dashboard with dynamic fill and right-side telemetry",
-    "neon": "transparent SYS / PATH / GIT cyber layout",
+    "muted": "workspace-like Powerline using mostly neutral semantic colors",
+    "neon": "workspace-like Powerline using neonized active-theme accents",
     "operator": "multi-line repository console with cached project status",
 }
 
 _STYLE_ALIASES = {
     "rounded powerline": "workspace",
     "powerlevel10k workspace": "workspace",
-    "focused development": "neon",
+    "focused development": "muted",
     "minimal status": "minimal",
 }
 
+_GLYPH_MIGRATIONS = {chr(0xF0418): chr(0xF418)}
+
 DEFAULT = {
-    "version": 3,
+    "version": 4,
     "prompt_style": "workspace",
     "lead_fade": "",
     "lead_arrow": "",
@@ -127,66 +131,12 @@ DEFAULT = {
 }
 
 STYLE_PRESETS = {
-    "workspace": {
-        "os_enabled": True,
-        "dev_enabled": True,
-        "container_enabled": True,
-        "cloud_enabled": True,
-        "duration_enabled": True,
-        "cmd_status_enabled": True,
-        "jobs_enabled": True,
-        "battery_enabled": True,
-        "memory_enabled": True,
-        "time_enabled": True,
-    },
-    "minimal": {
-        "os_enabled": False,
-        "dev_enabled": False,
-        "container_enabled": False,
-        "cloud_enabled": False,
-        "duration_enabled": True,
-        "cmd_status_enabled": True,
-        "jobs_enabled": False,
-        "battery_enabled": False,
-        "memory_enabled": False,
-        "time_enabled": False,
-    },
-    "hud": {
-        "os_enabled": True,
-        "dev_enabled": True,
-        "container_enabled": False,
-        "cloud_enabled": False,
-        "duration_enabled": True,
-        "cmd_status_enabled": True,
-        "jobs_enabled": True,
-        "battery_enabled": True,
-        "memory_enabled": False,
-        "time_enabled": True,
-    },
-    "neon": {
-        "os_enabled": True,
-        "dev_enabled": True,
-        "container_enabled": True,
-        "cloud_enabled": False,
-        "duration_enabled": True,
-        "cmd_status_enabled": True,
-        "jobs_enabled": True,
-        "battery_enabled": True,
-        "memory_enabled": False,
-        "time_enabled": True,
-    },
-    "operator": {
-        "os_enabled": True,
-        "dev_enabled": True,
-        "container_enabled": True,
-        "cloud_enabled": True,
-        "duration_enabled": True,
-        "cmd_status_enabled": True,
-        "jobs_enabled": True,
-        "battery_enabled": True,
-        "memory_enabled": False,
-        "time_enabled": True,
-    },
+    "workspace": {"os_enabled": True, "dev_enabled": True, "container_enabled": True, "cloud_enabled": True, "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True, "battery_enabled": True, "memory_enabled": True, "time_enabled": True},
+    "minimal": {"os_enabled": False, "dev_enabled": False, "container_enabled": False, "cloud_enabled": False, "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": False, "battery_enabled": False, "memory_enabled": False, "time_enabled": False},
+    "hud": {"os_enabled": True, "dev_enabled": True, "container_enabled": False, "cloud_enabled": False, "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True, "battery_enabled": True, "memory_enabled": False, "time_enabled": True},
+    "muted": {"os_enabled": True, "dev_enabled": True, "container_enabled": True, "cloud_enabled": False, "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True, "battery_enabled": True, "memory_enabled": False, "time_enabled": True},
+    "neon": {"os_enabled": True, "dev_enabled": True, "container_enabled": True, "cloud_enabled": False, "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True, "battery_enabled": True, "memory_enabled": False, "time_enabled": True},
+    "operator": {"os_enabled": True, "dev_enabled": True, "container_enabled": True, "cloud_enabled": True, "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True, "battery_enabled": True, "memory_enabled": False, "time_enabled": True},
 }
 
 
@@ -221,6 +171,8 @@ def profile():
         if key == "prompt_style":
             values[key] = normalize_style(value)
         elif type(value) is type(default):
+            if isinstance(value, str):
+                value = _GLYPH_MIGRATIONS.get(value, value)
             values[key] = value
     return values
 
@@ -229,6 +181,9 @@ def save(values):
     out = {key: values.get(key, default) for key, default in DEFAULT.items()}
     out["version"] = DEFAULT["version"]
     out["prompt_style"] = normalize_style(out.get("prompt_style"))
+    for key, value in list(out.items()):
+        if isinstance(value, str):
+            out[key] = _GLYPH_MIGRATIONS.get(value, value)
     directory = os.path.dirname(PROFILE_PATH)
     os.makedirs(directory, exist_ok=True)
     handle, temporary = tempfile.mkstemp(prefix="starship.", suffix=".json", dir=directory)
@@ -245,20 +200,40 @@ def save(values):
         raise
 
 
+def _hex_to_rgb(value: str) -> tuple[float, float, float]:
+    raw = value.lstrip("#")
+    return tuple(int(raw[index:index + 2], 16) / 255 for index in (0, 2, 4))
+
+
+def _rgb_to_hex(rgb: tuple[float, float, float]) -> str:
+    return "#" + "".join(f"{max(0, min(255, round(channel * 255))):02x}" for channel in rgb)
+
+
+def _neonize(value: str) -> str:
+    red, green, blue = _hex_to_rgb(value)
+    hue, saturation, brightness = colorsys.rgb_to_hsv(red, green, blue)
+    saturation = 0.12 if saturation < 0.08 else max(0.88, saturation)
+    brightness = max(0.96, brightness)
+    return _rgb_to_hex(colorsys.hsv_to_rgb(hue, min(1.0, saturation), min(1.0, brightness)))
+
+
 def _palette(colors):
     bg = colors["bg"]
     text = colors["text"]
     accent = colors.get("accent", text)
+    accent2 = colors.get("accent2", accent)
     return {
         "bg": bg,
         "surface": colors.get("bg_alt", bg),
         "fg": text,
         "muted": colors.get("text_dim", text),
         "accent": accent,
-        "accent2": colors.get("accent2", accent),
+        "accent2": accent2,
         "urgent": colors.get("urgent", accent),
         "warn": colors.get("ansi_yellow", colors.get("warning", accent)),
-        "success": colors.get("ansi_green", colors.get("success", colors.get("accent2", accent))),
+        "success": colors.get("ansi_green", colors.get("success", accent2)),
+        "neon": _neonize(accent),
+        "neon2": _neonize(accent2),
     }
 
 
@@ -308,22 +283,20 @@ accent2 = "{p['accent2']}"
 urgent = "{p['urgent']}"
 warn = "{p['warn']}"
 success = "{p['success']}"
+neon = "{p['neon']}"
+neon2 = "{p['neon2']}"
 '''
 
 
-def _os_config(workspace=False):
-    if workspace:
-        os_format = "[ $symbol]($style)"
-        os_style = "bold fg:accent bg:surface"
-        user_style = "bold fg:fg bg:surface"
-        root_style = "bold fg:urgent bg:surface"
-        host_style = "bold fg:accent2 bg:surface"
+def _os_config(variant="plain"):
+    if variant == "workspace":
+        os_format, os_style, user_style, root_style, host_style = "[ $symbol]($style)", "bold fg:accent bg:surface", "bold fg:fg bg:surface", "bold fg:urgent bg:surface", "bold fg:accent2 bg:surface"
+    elif variant == "muted":
+        os_format, os_style, user_style, root_style, host_style = "[ $symbol]($style)", "bold fg:muted bg:surface", "bold fg:fg bg:surface", "bold fg:urgent bg:surface", "bold fg:muted bg:surface"
+    elif variant == "neon":
+        os_format, os_style, user_style, root_style, host_style = "[ $symbol]($style)", "bold fg:neon bg:surface", "bold fg:fg bg:surface", "bold fg:urgent bg:surface", "bold fg:neon2 bg:surface"
     else:
-        os_format = "[$symbol]($style)"
-        os_style = "bold fg:accent"
-        user_style = "bold fg:fg"
-        root_style = "bold fg:urgent"
-        host_style = "bold fg:accent2"
+        os_format, os_style, user_style, root_style, host_style = "[$symbol]($style)", "bold fg:accent", "bold fg:fg", "bold fg:urgent", "bold fg:accent2"
     return f'''
 [os]
 disabled = false
@@ -356,21 +329,15 @@ style = "{host_style}"
 
 
 def _directory_config(p, style):
-    if style == "workspace":
-        fmt = f"[ {p['path_icon']} $path ]($style)"
-        sty = "bold fg:bg bg:accent"
-    elif style == "minimal":
-        fmt = f"[{p['path_icon']} $path]($style)"
-        sty = "bold fg:accent"
-    elif style == "hud":
-        fmt = f"[{p['path_icon']} $path]($style)"
-        sty = "bold fg:fg"
-    elif style == "neon":
-        fmt = f"[{p['path_icon']} $path]($style)"
-        sty = "bold fg:accent2"
-    else:
-        fmt = f"[{p['path_icon']} $path]($style)"
-        sty = "bold fg:fg"
+    styles = {
+        "workspace": (f"[ {p['path_icon']} $path ]($style)", "bold fg:bg bg:accent"),
+        "minimal": (f"[{p['path_icon']} $path]($style)", "bold fg:accent"),
+        "hud": (f"[{p['path_icon']} $path]($style)", "bold fg:fg"),
+        "muted": (f"[ {p['path_icon']} $path ]($style)", "bold fg:fg bg:bg"),
+        "neon": (f"[ {p['path_icon']} $path ]($style)", "bold fg:bg bg:neon"),
+        "operator": (f"[{p['path_icon']} $path]($style)", "bold fg:fg"),
+    }
+    fmt, sty = styles[style]
     return f'''
 [directory]
 format = "{fmt}"
@@ -416,17 +383,50 @@ deleted = "[{p['status_deleted']}${{count}}](bold fg:bg bg:urgent) "
 '''
 
 
+def _filled_git_config(p, style):
+    if style == "muted":
+        branch_style, state_style, status_style = "bold fg:fg bg:surface", "bold fg:urgent bg:surface", "bold fg:muted bg:surface"
+    else:
+        branch_style, state_style, status_style = "bold fg:bg bg:neon2", "bold fg:urgent bg:neon2", "bold fg:bg bg:neon2"
+    return f'''
+[git_branch]
+disabled = {_bool(not p['branch_enabled'])}
+symbol = "{p['branch_icon']} "
+format = "[$symbol$branch(:$remote_branch) ]($style)"
+style = "{branch_style}"
+
+[git_state]
+disabled = {_bool(not p['state_enabled'])}
+format = "[{p['state_icon']} $state( $progress_current/$progress_total) ]($style)"
+style = "{state_style}"
+
+[git_status]
+disabled = {_bool(not p['status_enabled'])}
+format = "([$all_status$ahead_behind]($style))"
+style = "{status_style}"
+conflicted = "{p['status_conflicted']}${{count}} "
+ahead = "{p['status_ahead']}${{count}} "
+behind = "{p['status_behind']}${{count}} "
+diverged = "{p['status_diverged']}⇡${{ahead_count}}⇣${{behind_count}} "
+untracked = "{p['status_untracked']}${{count}} "
+stashed = "{p['status_stashed']}${{count}} "
+modified = "{p['status_modified']}${{count}} "
+staged = "{p['status_staged']}${{count}} "
+renamed = "{p['status_renamed']}${{count}} "
+deleted = "{p['status_deleted']}${{count}} "
+'''
+
+
 def _rich_git_config(p, style):
     colors = {
         "minimal": ("accent2", "muted", "urgent", "muted", "muted"),
         "hud": ("accent2", "muted", "urgent", "accent", "muted"),
-        "neon": ("accent", "accent2", "urgent", "fg", "muted"),
         "operator": ("accent", "accent2", "urgent", "fg", "muted"),
     }
     branch_c, commit_c, state_c, status_c, metrics_c = colors[style]
     commit_fmt = "" if style == "minimal" else f"[ {_G['git_commit']} $hash$tag](fg:{commit_c})"
     metrics_fmt = "" if style == "minimal" else f"[ +$added/-$deleted](fg:{metrics_c})"
-    remote = "" if style in {"minimal", "hud", "neon"} else "(:$remote_branch)"
+    remote = "" if style in {"minimal", "hud"} else "(:$remote_branch)"
     return f'''
 [git_branch]
 disabled = {_bool(not p['branch_enabled'])}
@@ -493,7 +493,7 @@ def _context_config():
 [kubernetes]
 disabled = false
 symbol = "{_G['kubernetes']} "
-format = '[$symbol$context( \($namespace\)) ](bold fg:accent2)'
+format = '[$symbol$context( \\($namespace\\)) ](bold fg:accent2)'
 detect_files = ["Chart.yaml", "kustomization.yaml", "skaffold.yaml"]
 detect_folders = [".kube", "k8s"]
 ''')
@@ -546,11 +546,11 @@ format = "[ {_G['time']} $time ](bold fg:warn)"
 '''
 
 
-def _character_config(p, compact=False):
+def _character_config(p, compact=False, color="accent"):
     prefix = "" if compact else "╰─ "
     return f'''
 [character]
-success_symbol = "[{prefix}{p['success_symbol']}](bold fg:accent)"
+success_symbol = "[{prefix}{p['success_symbol']}](bold fg:{color})"
 error_symbol = "[{prefix}{p['error_symbol']}](bold fg:urgent)"
 vimcmd_symbol = "[{prefix}{p['vim_symbol']}](bold fg:accent2)"
 vimcmd_replace_one_symbol = "[{prefix}{p['vim_symbol']}](bold fg:urgent)"
@@ -560,8 +560,6 @@ vimcmd_visual_symbol = "[{prefix}{p['vim_symbol']}](bold fg:accent2)"
 
 
 def _render_workspace(p, palette):
-    # Preserve the pre-switcher workspace exactly in visible geometry and
-    # module ordering. This is the known-good prompt the style system started from.
     git = ("$git_branch" if p["branch_enabled"] else "") + ("$git_state" if p["state_enabled"] else "") + ("$git_status" if p["status_enabled"] else "")
     git_custom = ""
     if git:
@@ -595,7 +593,7 @@ right_format = """{right_format}"""
 command = "printf x"
 when = "! git rev-parse --is-inside-work-tree >/dev/null 2>&1"
 format = "[{p['path_end']}](fg:accent)"
-''' + _palette_block(palette) + _os_config(workspace=True) + _directory_config(p, "workspace") + _legacy_git_config(p) + _context_config() + _telemetry_config(p) + _character_config(p)
+''' + _palette_block(palette) + _os_config("workspace") + _directory_config(p, "workspace") + _legacy_git_config(p) + _context_config() + _telemetry_config(p) + _character_config(p)
 
 
 def _render_minimal(p, palette):
@@ -621,15 +619,64 @@ style = "fg:muted"
 ''' + _palette_block(palette) + _os_config() + _directory_config(p, "hud") + _rich_git_config(p, "hud") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
 
 
+def _render_muted(p, palette):
+    identity = _identity_block(p)
+    context = _context_format(p)
+    right = _right_format(p)
+    return _header("muted") + f'''
+format = """
+[{p['lead_fade']}](fg:surface){identity}[ ](bg:surface)[{p['lead_arrow']}](fg:surface bg:bg)\
+$directory\
+${{custom.muted_git_connector}}$git_branch$git_state$git_status${{custom.muted_git_end}}${{custom.muted_path_end}}\
+{context}\
+$line_break$character"""
+right_format = """({right})"""
+
+[custom.muted_git_connector]
+command = "printf x"
+when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+format = "[{p['git_connector']}](fg:bg bg:surface)"
+
+[custom.muted_git_end]
+command = "printf x"
+when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+format = "[{p['git_end']}](fg:surface)"
+
+[custom.muted_path_end]
+command = "printf x"
+when = "! git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+format = "[{p['path_end']}](fg:bg)"
+''' + _palette_block(palette) + _os_config("muted") + _directory_config(p, "muted") + _filled_git_config(p, "muted") + _context_config() + _telemetry_config(p) + _character_config(p)
+
+
 def _render_neon(p, palette):
     identity = _identity_block(p)
     context = _context_format(p)
+    right = _right_format(p)
     return _header("neon") + f'''
 format = """
-[◢ SYS ](bold fg:accent){identity}[  ](fg:muted)[PATH ](bold fg:accent2)$directory[  ](fg:muted)[GIT ](bold fg:accent)$git_branch$git_commit$git_state$git_status$git_metrics[ ◣](bold fg:accent)\
-$line_break[└─ ENV ](fg:muted){context}$character"""
-right_format = """{_right_format(p)}"""
-''' + _palette_block(palette) + _os_config() + _directory_config(p, "neon") + _rich_git_config(p, "neon") + _context_config() + _telemetry_config(p) + _character_config(p, compact=True)
+[{p['lead_fade']}](fg:surface){identity}[ ](bg:surface)[{p['lead_arrow']}](fg:surface bg:neon)\
+$directory\
+${{custom.neon_git_connector}}$git_branch$git_state$git_status${{custom.neon_git_end}}${{custom.neon_path_end}}\
+{context}\
+$line_break$character"""
+right_format = """({right})"""
+
+[custom.neon_git_connector]
+command = "printf x"
+when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+format = "[{p['git_connector']}](fg:neon bg:neon2)"
+
+[custom.neon_git_end]
+command = "printf x"
+when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+format = "[{p['git_end']}](fg:neon2)"
+
+[custom.neon_path_end]
+command = "printf x"
+when = "! git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+format = "[{p['path_end']}](fg:neon)"
+''' + _palette_block(palette) + _os_config("neon") + _directory_config(p, "neon") + _filled_git_config(p, "neon") + _context_config() + _telemetry_config(p) + _character_config(p, color="neon")
 
 
 def _render_operator(p, palette):
@@ -671,6 +718,7 @@ def render(colors, settings=None):
         "workspace": _render_workspace,
         "minimal": _render_minimal,
         "hud": _render_hud,
+        "muted": _render_muted,
         "neon": _render_neon,
         "operator": _render_operator,
     }
