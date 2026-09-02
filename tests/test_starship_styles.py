@@ -44,22 +44,19 @@ def test_every_style_is_valid_toml():
         assert f"STARSHIP_STYLE = {style}" in text
 
 
-def test_workspace_preserves_original_powerline_and_os_identity():
+def test_workspace_is_the_original_powerline_prompt():
     parsed = tomllib.loads(render("workspace"))
-    assert parsed["format"].startswith("[](fg:surface)$os$username$hostname")
+    fmt = parsed["format"]
+    assert fmt.startswith("[](fg:surface)$os$username$hostname")
+    assert "$directory" in fmt
+    assert "${custom.git_connector}$git_branch$git_state$git_status${custom.git_end}" in fmt
+    assert "$git_commit" not in fmt
+    assert "$git_metrics" not in fmt
     assert parsed["os"]["disabled"] is False
     assert parsed["os"]["symbols"]["Arch"].strip()
     assert parsed["directory"]["style"] == "bold fg:bg bg:accent"
-    assert "${custom.path_end}" in parsed["format"]
-
-
-def test_workspace_adds_git_detail_without_changing_geometry():
-    parsed = tomllib.loads(render("workspace"))
-    assert "$git_commit" in parsed["format"]
-    assert "$git_metrics" in parsed["format"]
     assert ":$remote_branch" in parsed["git_branch"]["format"]
-    assert parsed["git_commit"]["only_detached"] is False
-    assert parsed["git_metrics"]["disabled"] is False
+    assert "${custom.path_end}" in fmt
 
 
 def test_layouts_are_structurally_distinct():
@@ -72,11 +69,15 @@ def test_layouts_are_structurally_distinct():
     assert "OPERATOR" in formats["operator"] and "├─ cwd" in formats["operator"] and "├─ git" in formats["operator"]
 
 
-def test_operator_has_contextual_custom_modules():
+def test_operator_has_valid_contextual_custom_modules():
     parsed = tomllib.loads(render("operator"))
     assert "git_age" in parsed["custom"]
     assert "project_status" in parsed["custom"]
-    assert ".starship-status" in parsed["custom"]["project_status"]["command"]
+    command = parsed["custom"]["project_status"]["command"]
+    condition = parsed["custom"]["project_status"]["when"]
+    assert '.starship-status' in command
+    assert '"$root/.starship-status"' in command
+    assert '"$root/.starship-status"' in condition
 
 
 def test_minimal_is_quiet():
