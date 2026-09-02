@@ -493,7 +493,7 @@ def _context_config():
 [kubernetes]
 disabled = false
 symbol = "{_G['kubernetes']} "
-format = "[$symbol$context( \\($namespace\\)) ](bold fg:accent2)"
+format = '[$symbol$context( \($namespace\)) ](bold fg:accent2)'
 detect_files = ["Chart.yaml", "kustomization.yaml", "skaffold.yaml"]
 detect_folders = [".kube", "k8s"]
 ''')
