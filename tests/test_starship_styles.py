@@ -19,9 +19,21 @@ COLORS = {
     "ansi_green": "#66ff99",
 }
 
+ALT_COLORS = {
+    "bg": "#090b0d",
+    "bg_alt": "#171a1d",
+    "text": "#e6e2d9",
+    "text_dim": "#7b7f83",
+    "accent": "#c58a3a",
+    "accent2": "#4e94a8",
+    "urgent": "#c94f5f",
+    "ansi_yellow": "#e6bb55",
+    "ansi_green": "#78ad76",
+}
 
-def render(style):
-    return starship.render(COLORS, starship.apply_style(starship.DEFAULT, style))
+
+def render(style, colors=COLORS):
+    return starship.render(colors, starship.apply_style(starship.DEFAULT, style))
 
 
 def test_every_style_is_valid_toml():
@@ -32,22 +44,32 @@ def test_every_style_is_valid_toml():
         assert f"STARSHIP_STYLE = {style}" in text
 
 
-def test_workspace_has_richer_git_information():
-    text = render("workspace")
-    parsed = tomllib.loads(text)
+def test_workspace_preserves_original_powerline_and_os_identity():
+    parsed = tomllib.loads(render("workspace"))
+    assert parsed["format"].startswith("[](fg:surface)$os$username$hostname")
+    assert parsed["os"]["disabled"] is False
+    assert parsed["os"]["symbols"]["Arch"].strip()
+    assert parsed["directory"]["style"] == "bold fg:bg bg:accent"
+    assert "${custom.path_end}" in parsed["format"]
+
+
+def test_workspace_adds_git_detail_without_changing_geometry():
+    parsed = tomllib.loads(render("workspace"))
     assert "$git_commit" in parsed["format"]
     assert "$git_metrics" in parsed["format"]
-    assert ":$remote_branch" in text
-    assert "[git_commit]" in text
-    assert "[git_metrics]" in text
-    assert "${custom.path_end}" in text
+    assert ":$remote_branch" in parsed["git_branch"]["format"]
+    assert parsed["git_commit"]["only_detached"] is False
+    assert parsed["git_metrics"]["disabled"] is False
 
 
-def test_hud_uses_dynamic_fill():
-    parsed = tomllib.loads(render("hud"))
-    assert "$fill" in parsed["format"]
-    assert parsed["right_format"] == ""
-    assert parsed["fill"]["symbol"] == "·"
+def test_layouts_are_structurally_distinct():
+    docs = {style: tomllib.loads(render(style)) for style in starship.STYLE_NAMES}
+    formats = {style: doc["format"] for style, doc in docs.items()}
+    assert len(set(formats.values())) == len(starship.STYLE_NAMES)
+    assert "$fill" not in formats["workspace"]
+    assert "$fill" in formats["hud"]
+    assert "SYS " in formats["neon"] and "PATH " in formats["neon"] and "GIT " in formats["neon"]
+    assert "OPERATOR" in formats["operator"] and "├─ cwd" in formats["operator"] and "├─ git" in formats["operator"]
 
 
 def test_operator_has_contextual_custom_modules():
@@ -63,6 +85,16 @@ def test_minimal_is_quiet():
     assert parsed["battery"]["disabled"] is True
     assert parsed["time"]["disabled"] is True
     assert parsed["jobs"]["disabled"] is True
+
+
+def test_all_layouts_recolor_from_active_theme_roles():
+    for style in starship.STYLE_NAMES:
+        first = tomllib.loads(render(style, COLORS))["palettes"]["theme"]
+        second = tomllib.loads(render(style, ALT_COLORS))["palettes"]["theme"]
+        assert first != second
+        assert first["accent"] == COLORS["accent"]
+        assert second["accent"] == ALT_COLORS["accent"]
+        assert second["accent2"] == ALT_COLORS["accent2"]
 
 
 def test_manual_toggle_survives_render():
