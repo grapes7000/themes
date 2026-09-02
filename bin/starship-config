@@ -121,12 +121,12 @@ def preview_lines(values):
     if style == "minimal":
         return f"{workspace}  {values['branch_icon']} main", telemetry, values["success_symbol"]
     if style == "hud":
-        return f" {workspace}  {git}  {context} ·······", telemetry, f"╰─ {values['success_symbol']}"
+        return f"╭─  {workspace}  {values['branch_icon']} main  ···········  {telemetry} ─╮", "", f"╰─ {values['success_symbol']}"
     if style == "neon":
-        return f" {workspace}    {git}    {context}", telemetry, f"╰─ {values['success_symbol']}"
+        return f"◢ SYS    PATH {workspace}   GIT {git} ◣", telemetry, f"  └─ {context} {values['success_symbol']}"
     if style == "operator":
-        return f"╭─  {workspace}  {git} ─────", telemetry, f"│ 󰔛 12m  󰄬 tests:pass  {context}   ╰─ {values['success_symbol']}"
-    return f" user  {workspace}  {git}  {context}", telemetry, f"╰─ {values['success_symbol']}"
+        return "╭─ OPERATOR  ─────────────── 󰂄 82%  10:42 AM", telemetry, f"├─ cwd  {workspace}   ├─ git  {git} 󰔛 12m   ├─ env  {context} 󰄬 tests:pass   ╰─ {values['success_symbol']}"
+    return f"  {workspace}  {git}  {context}", telemetry, f"╰─ {values['success_symbol']}"
 
 
 def draw(stdscr, values, section, row, notice, embedded=False):
@@ -145,8 +145,8 @@ def draw(stdscr, values, section, row, notice, embedded=False):
     for index, (title, _) in enumerate(SECTIONS):
         if 3 + index >= height - 1:
             break
-        style = curses.A_REVERSE if index == section else 0
-        stdscr.addstr(3 + index, 0, clip_cells(title, 20), style)
+        style_attr = curses.A_REVERSE if index == section else 0
+        stdscr.addstr(3 + index, 0, clip_cells(title, 20), style_attr)
     if width > 22 and height > 3:
         stdscr.addstr(3, 22, clip_cells(name, width - 23), curses.A_BOLD)
     show_preview = height >= 18
@@ -157,9 +157,9 @@ def draw(stdscr, values, section, row, notice, embedded=False):
         if 5 + index - first >= content_bottom:
             break
         value = "on" if values[key] is True else "off" if values[key] is False else str(values[key])
-        style = curses.A_REVERSE if index == row else 0
+        style_attr = curses.A_REVERSE if index == row else 0
         if width > 22:
-            stdscr.addstr(5 + index - first, 22, clip_cells(f"{LABELS[key]}: {value}", width - 23), style)
+            stdscr.addstr(5 + index - first, 22, clip_cells(f"{LABELS[key]}: {value}", width - 23), style_attr)
     if show_preview:
         left, right, marker = preview_lines(values)
         right_width = cell_width(right)
