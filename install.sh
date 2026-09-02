@@ -58,10 +58,10 @@ bash "$REPO/tools/unpack-theme-studio.sh" "$STUDIO_TMP" >/dev/null
 
 install -m755 "$REPO/bin/theme" "$HOME/.local/bin/theme-legacy"
 install -m755 "$REPO/bin/theme-studio" "$HOME/.local/bin/theme"
-for t in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image; do
+for t in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image theme-qt-install; do
     install -m755 "$REPO/bin/$t" "$HOME/.local/bin/$t"
 done
-for module in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py theme_ui.py; do
+for module in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py theme_ui.py theme_qt_app.py theme_qt_bridge.py theme_qt_theme_engine.py; do
     install -m644 "$REPO/bin/$module" "$HOME/.local/bin/$module"
 done
 mkdir -p "$CFG/theme-engine/ui-styles"
@@ -72,6 +72,8 @@ done
 mkdir -p "$HOME/.local/share/doc/theme-studio"
 install -m644 "$STUDIO_TMP/THEME-STUDIO.md" "$HOME/.local/share/doc/theme-studio/README.md"
 install -m644 "$STUDIO_TMP/Theme-Studio-TUI-Design-Plan.md" "$HOME/.local/share/doc/theme-studio/Design-Plan.md"
+mkdir -p "$HOME/.local/share/theme-studio/qt/qml"
+cp -R "$REPO"/qt-theme-studio/qml/. "$HOME/.local/share/theme-studio/qt/qml/"
 
 has() { command -v "$1" >/dev/null 2>&1; }
 opt() { has "$2" && echo "$1" || echo "# $1"; }
