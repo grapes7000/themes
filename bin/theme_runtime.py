@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any
 
 from theme_components import apply_all
@@ -193,8 +194,39 @@ def _reload_hyprland() -> tuple[bool, str]:
     return True, message
 
 
+def _hyprpaper_monitors(hyprctl: str) -> list[str]:
+    """Return connected output names without making wallpaper selection implicit."""
+    proc = subprocess.run([hyprctl, "monitors", "-j"], text=True, capture_output=True)
+    if proc.returncode:
+        return []
+    try:
+        monitors = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return []
+    return [item["name"] for item in monitors if isinstance(item, dict) and item.get("name")]
+
+
+def _ensure_hyprpaper(hyprctl: str) -> tuple[bool, str]:
+    """Start Hyprpaper on demand and wait briefly for its IPC socket."""
+    probe = [hyprctl, "hyprpaper", "listactive"]
+    if subprocess.run(probe, text=True, capture_output=True).returncode == 0:
+        return True, ""
+    command = shutil.which("hyprpaper")
+    if not command:
+        return False, "hyprpaper is not installed"
+    try:
+        subprocess.Popen([command], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as exc:
+        return False, f"could not start hyprpaper: {exc}"
+    for _ in range(20):
+        time.sleep(0.1)
+        if subprocess.run(probe, text=True, capture_output=True).returncode == 0:
+            return True, ""
+    return False, "hyprpaper did not create its IPC socket"
+
+
 def _apply_static_wallpaper(name: str) -> tuple[bool, str]:
-    """Switch a matching theme wallpaper in the already-running hyprpaper."""
+    """Switch a theme wallpaper on every connected output via current IPC."""
     if name == PREVIEW_NAME or not target_enabled("wallpaper"):
         return False, ""
     path = (CFG / "hypr" / "wallpapers" / f"{name}.png").expanduser()
@@ -203,13 +235,21 @@ def _apply_static_wallpaper(name: str) -> tuple[bool, str]:
     hyprctl = shutil.which("hyprctl")
     if not hyprctl or not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
         return False, ""
-    subprocess.run([hyprctl, "hyprpaper", "preload", str(path)], text=True, capture_output=True)
-    proc = subprocess.run([hyprctl, "hyprpaper", "wallpaper", f",{path}"], text=True, capture_output=True)
-    message = (proc.stdout or proc.stderr or "").strip()
-    if proc.returncode != 0:
-        raise RuntimeError(f"hyprpaper live switch failed: {message or f'exit {proc.returncode}'}")
+    ready, message = _ensure_hyprpaper(hyprctl)
+    if not ready:
+        raise RuntimeError(f"hyprpaper live switch failed: {message}")
+    monitors = _hyprpaper_monitors(hyprctl) or [""]
+    for monitor in monitors:
+        proc = subprocess.run(
+            [hyprctl, "hyprpaper", "wallpaper", f"{monitor},{path},cover"],
+            text=True, capture_output=True,
+        )
+        message = (proc.stdout or proc.stderr or "").strip()
+        if proc.returncode != 0:
+            label = monitor or "fallback"
+            raise RuntimeError(f"hyprpaper live switch failed for {label}: {message or f'exit {proc.returncode}'}")
     _publish_current_wallpaper(path)
-    return True, message or str(path)
+    return True, ", ".join(monitors) + ": " + str(path)
 
 
 def _starship_color(key: str, roles: dict[str, Any]) -> str:
