@@ -225,19 +225,17 @@ def _ensure_hyprpaper(hyprctl: str) -> tuple[bool, str]:
     return False, "hyprpaper did not create its IPC socket"
 
 
-def _apply_static_wallpaper(name: str) -> tuple[bool, str]:
-    """Switch a theme wallpaper on every connected output via current IPC."""
-    if name == PREVIEW_NAME or not target_enabled("wallpaper"):
-        return False, ""
-    path = (CFG / "hypr" / "wallpapers" / f"{name}.png").expanduser()
+def apply_wallpaper_path(path: Path | str) -> str:
+    """Apply an explicit user-selected wallpaper without altering theme bindings."""
+    path = Path(path).expanduser().resolve()
     if not path.is_file():
-        return False, ""
+        raise FileNotFoundError(path)
     hyprctl = shutil.which("hyprctl")
     if not hyprctl or not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-        return False, ""
+        raise RuntimeError("not in a Hyprland session or hyprctl is unavailable")
     ready, message = _ensure_hyprpaper(hyprctl)
     if not ready:
-        raise RuntimeError(f"hyprpaper live switch failed: {message}")
+        raise RuntimeError(f"hyprpaper is unavailable: {message}")
     monitors = _hyprpaper_monitors(hyprctl) or [""]
     for monitor in monitors:
         proc = subprocess.run(
@@ -249,7 +247,17 @@ def _apply_static_wallpaper(name: str) -> tuple[bool, str]:
             label = monitor or "fallback"
             raise RuntimeError(f"hyprpaper live switch failed for {label}: {message or f'exit {proc.returncode}'}")
     _publish_current_wallpaper(path)
-    return True, ", ".join(monitors) + ": " + str(path)
+    return ", ".join(monitors) + ": " + str(path)
+
+
+def _apply_static_wallpaper(name: str) -> tuple[bool, str]:
+    """Apply a theme's bound wallpaper, if it has one and the target is enabled."""
+    if name == PREVIEW_NAME or not target_enabled("wallpaper"):
+        return False, ""
+    path = CFG / "hypr" / "wallpapers" / f"{name}.png"
+    if not path.is_file():
+        return False, ""
+    return True, apply_wallpaper_path(path)
 
 
 def _starship_color(key: str, roles: dict[str, Any]) -> str:

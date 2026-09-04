@@ -7,15 +7,20 @@ semantics and theme_runtime owns applying/restoring desktop state.
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
+from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject, Property, Signal, Slot
+from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
+from PySide6.QtGui import QImage
 
 import theme_runtime
 from theme_editor import EditorError, ThemeEditor, list_themes
 
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+_WALLPAPER_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".jxl"}
 
 ROLE_FIELDS = (
     ("bg", "Background"),
@@ -53,6 +58,8 @@ class ThemeStudioBridge(QObject):
     stateChanged = Signal()
     themesChanged = Signal()
     statusChanged = Signal()
+    wallpapersChanged = Signal()
+    selectedWallpaperChanged = Signal()
 
     def __init__(self, initial_theme: str | None = None) -> None:
         super().__init__()
@@ -60,7 +67,13 @@ class ThemeStudioBridge(QObject):
         self._status = "Theme Studio ready"
         self._live_preview = True
         self._restore_name = theme_runtime.active_theme()
+        self._wallpaper_dir = Path(os.environ.get(
+            "THEME_STUDIO_WALLPAPER_DIR", theme_runtime.CFG / "hypr" / "wallpapers"
+        )).expanduser()
+        self._wallpapers: list[dict[str, str]] = []
+        self._selected_wallpaper = -1
         self._load_initial(initial_theme)
+        self.refreshWallpapers()
 
     def _load_initial(self, initial_theme: str | None) -> None:
         names = list_themes()
@@ -104,6 +117,30 @@ class ThemeStudioBridge(QObject):
     @Property(str, notify=themesChanged)
     def themesJson(self) -> str:  # noqa: N802
         return json.dumps(list_themes())
+
+    @Property(str, notify=wallpapersChanged)
+    def wallpaperDirectory(self) -> str:  # noqa: N802
+        return str(self._wallpaper_dir)
+
+    @Property(str, notify=wallpapersChanged)
+    def wallpapersJson(self) -> str:  # noqa: N802
+        return json.dumps(self._wallpapers)
+
+    @Property(int, notify=selectedWallpaperChanged)
+    def selectedWallpaperIndex(self) -> int:  # noqa: N802
+        return self._selected_wallpaper
+
+    @Property(str, notify=selectedWallpaperChanged)
+    def selectedWallpaperUrl(self) -> str:  # noqa: N802
+        if 0 <= self._selected_wallpaper < len(self._wallpapers):
+            return self._wallpapers[self._selected_wallpaper]["url"]
+        return ""
+
+    @Property(str, notify=selectedWallpaperChanged)
+    def selectedWallpaperName(self) -> str:  # noqa: N802
+        if 0 <= self._selected_wallpaper < len(self._wallpapers):
+            return self._wallpapers[self._selected_wallpaper]["name"]
+        return ""
 
     @Property(str, notify=stateChanged)
     def themeName(self) -> str:  # noqa: N802
@@ -312,6 +349,90 @@ class ThemeStudioBridge(QObject):
     def reloadThemes(self) -> None:  # noqa: N802
         self.themesChanged.emit()
         self._set_status("Theme list refreshed")
+
+    @Slot()
+    def refreshWallpapers(self) -> None:  # noqa: N802
+        self._wallpaper_dir.mkdir(parents=True, exist_ok=True)
+        files = sorted(
+            (path for path in self._wallpaper_dir.iterdir()
+             if path.is_file() and path.suffix.lower() in _WALLPAPER_EXTENSIONS),
+            key=lambda path: path.name.casefold(),
+        )
+        previous = self.selectedWallpaperName
+        self._wallpapers = [
+            {"name": path.name, "path": str(path), "url": QUrl.fromLocalFile(str(path)).toString()}
+            for path in files
+        ]
+        self._selected_wallpaper = next(
+            (index for index, item in enumerate(self._wallpapers) if item["name"] == previous),
+            0 if self._wallpapers else -1,
+        )
+        self.wallpapersChanged.emit()
+        self.selectedWallpaperChanged.emit()
+        self._set_status(
+            f"{len(self._wallpapers)} wallpaper{'s' if len(self._wallpapers) != 1 else ''} in {self._wallpaper_dir}"
+        )
+
+    @Slot(str)
+    def setWallpaperDirectory(self, directory: str) -> None:  # noqa: N802
+        path = Path(directory).expanduser()
+        if not path.is_dir():
+            self._set_status(f"Wallpaper folder does not exist: {path}")
+            return
+        self._wallpaper_dir = path.resolve()
+        self.refreshWallpapers()
+
+    @Slot(int)
+    def selectWallpaper(self, index: int) -> None:  # noqa: N802
+        if not self._wallpapers:
+            return
+        self._selected_wallpaper = max(0, min(index, len(self._wallpapers) - 1))
+        self.selectedWallpaperChanged.emit()
+
+    def _selected_wallpaper_path(self) -> Path | None:
+        if not (0 <= self._selected_wallpaper < len(self._wallpapers)):
+            return None
+        return Path(self._wallpapers[self._selected_wallpaper]["path"])
+
+    @Slot()
+    def applySelectedWallpaper(self) -> None:  # noqa: N802
+        path = self._selected_wallpaper_path()
+        if not path:
+            self._set_status("Select a wallpaper first")
+            return
+        try:
+            theme_runtime.apply_wallpaper_path(path)
+            self._set_status(f"Applied {path.name}; it is an override until the next theme switch")
+        except Exception as exc:
+            self._set_status(f"Could not apply wallpaper: {exc}")
+
+    @Slot(str)
+    def bindSelectedWallpaper(self, theme: str) -> None:  # noqa: N802
+        path = self._selected_wallpaper_path()
+        if not path:
+            self._set_status("Select a wallpaper first")
+            return
+        if theme not in list_themes():
+            self._set_status(f"Unknown theme: {theme}")
+            return
+        image = QImage(str(path))
+        if image.isNull():
+            self._set_status(f"Could not decode {path.name}")
+            return
+        destination = theme_runtime.CFG / "hypr" / "wallpapers" / f"{theme}.png"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=f".{theme}.", suffix=".png", dir=destination.parent)
+        os.close(fd)
+        temporary_path = Path(temporary)
+        try:
+            if not image.save(str(temporary_path), "PNG"):
+                raise OSError("Qt could not encode the image as PNG")
+            os.replace(temporary_path, destination)
+        except Exception as exc:
+            temporary_path.unlink(missing_ok=True)
+            self._set_status(f"Could not bind wallpaper: {exc}")
+            return
+        self._set_status(f"Bound {path.name} to {theme}; it will apply when that theme is selected")
 
     @Slot()
     def closeSession(self) -> None:  # noqa: N802

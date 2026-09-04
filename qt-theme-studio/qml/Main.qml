@@ -9,7 +9,7 @@ ApplicationWindow {
     id: root
     width: 1180
     height: 760
-    minimumWidth: 920
+    minimumWidth: 980
     minimumHeight: 600
     visible: true
     title: "Theme Studio — " + studioBridge.themeName + (studioBridge.dirty ? " *" : "")
@@ -60,7 +60,8 @@ ApplicationWindow {
                     SidebarButton { text: "Themes"; selected: root.currentPage === 0; Layout.fillWidth: true; onClicked: root.currentPage = 0 }
                     SidebarButton { text: "Palette"; selected: root.currentPage === 1; Layout.fillWidth: true; onClicked: root.currentPage = 1 }
                     SidebarButton { text: "Style"; selected: root.currentPage === 2; Layout.fillWidth: true; onClicked: root.currentPage = 2 }
-                    SidebarButton { text: "Inspector"; selected: root.currentPage === 3; Layout.fillWidth: true; onClicked: root.currentPage = 3 }
+                    SidebarButton { text: "Wallpapers"; selected: root.currentPage === 3; Layout.fillWidth: true; onClicked: root.currentPage = 3 }
+                    SidebarButton { text: "Inspector"; selected: root.currentPage === 4; Layout.fillWidth: true; onClicked: root.currentPage = 4 }
                     Item { Layout.fillHeight: true }
                     Rectangle {
                         Layout.fillWidth: true
@@ -95,6 +96,7 @@ ApplicationWindow {
                     ThemesPage {}
                     PalettePage {}
                     StylePage {}
+                    WallpaperPage {}
                     InspectorPage {}
                 }
             }
