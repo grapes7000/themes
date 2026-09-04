@@ -32,7 +32,11 @@ ApplicationWindow {
                 anchors.leftMargin: 18
                 anchors.rightMargin: 18
                 spacing: 10
-                ColumnLayout { spacing: 0; Text { text: "Theme Studio"; color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: 17; font.weight: Font.Bold }; Text { text: studioBridge.themeName + (studioBridge.dirty ? " · unsaved changes" : ""); color: studioBridge.dirty ? Theme.warn : Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: 11 } }
+                ColumnLayout {
+                    spacing: 0
+                    Text { text: "Theme Studio"; color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: 17; font.weight: Font.Bold }
+                    Text { text: studioBridge.themeName + (studioBridge.dirty ? " · unsaved changes" : ""); color: studioBridge.dirty ? Theme.warn : Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: 11 }
+                }
                 Item { Layout.fillWidth: true }
                 SecondaryButton { text: "Undo"; enabled: studioBridge.canUndo; onClicked: studioBridge.undo() }
                 SecondaryButton { text: "Redo"; enabled: studioBridge.canRedo; onClicked: studioBridge.redo() }
@@ -69,7 +73,11 @@ ApplicationWindow {
                             anchors.fill: parent
                             anchors.margins: 10
                             spacing: 6
-                            RowLayout { Layout.fillWidth: true; Text { text: "Live preview"; color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: 12; Layout.fillWidth: true }; Switch { checked: studioBridge.livePreview; onToggled: studioBridge.setLivePreview(checked) } }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text { text: "Live preview"; color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: 12; Layout.fillWidth: true }
+                                Switch { checked: studioBridge.livePreview; onToggled: studioBridge.setLivePreview(checked) }
+                            }
                             SecondaryButton { text: "Preview now"; Layout.fillWidth: true; onClicked: studioBridge.previewNow() }
                             SecondaryButton { text: "Apply saved"; Layout.fillWidth: true; enabled: !studioBridge.dirty; onClicked: studioBridge.applySaved() }
                         }
@@ -80,7 +88,15 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 color: Theme.bg
-                StackLayout { anchors.fill: parent; anchors.margins: 28; currentIndex: root.currentPage; ThemesPage {}; PalettePage {}; StylePage {}; InspectorPage {} }
+                StackLayout {
+                    anchors.fill: parent
+                    anchors.margins: 28
+                    currentIndex: root.currentPage
+                    ThemesPage {}
+                    PalettePage {}
+                    StylePage {}
+                    InspectorPage {}
+                }
             }
         }
         Rectangle {

@@ -18,7 +18,11 @@ Item {
                 Layout.fillWidth: true
                 title: "Mode"
                 subtitle: "This is theme metadata; the generated contract uses it for light/dark-aware consumers."
-                RowLayout { Layout.fillWidth: true; Text { text: "Dark theme"; color: Theme.textPrimary; font.family: Theme.fontFamily; Layout.fillWidth: true }; Switch { checked: studioBridge.dark; onToggled: studioBridge.setDark(checked) } }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text { text: "Dark theme"; color: Theme.textPrimary; font.family: Theme.fontFamily; Layout.fillWidth: true }
+                    Switch { checked: studioBridge.dark; onToggled: studioBridge.setDark(checked) }
+                }
             }
             SectionCard {
                 Layout.fillWidth: true
