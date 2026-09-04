@@ -22,7 +22,11 @@ THEME_DIR = CFG / "hypr" / "themes"
 ACTIVE_FILE = CFG / "hypr" / "generated" / ".active"
 TARGETS_FILE = CFG / "theme-engine" / "targets.conf"
 RENDER_ROOT = CACHE / "theme-engine" / "wallpapers"
-PREVIEW_NAME = "_theme_studio_preview"
+# This name is passed through ``safe_theme_name()`` when the preview is loaded.
+# Do not begin it with punctuation: the sanitizer strips a leading underscore,
+# which previously made the writer and reader disagree on the file path.
+PREVIEW_NAME = "theme_studio_preview"
+LEGACY_PREVIEW_NAME = "_theme_studio_preview"
 
 
 def active_theme() -> str | None:
@@ -113,7 +117,8 @@ def write_preview(data: dict[str, Any]) -> Path:
 
 
 def cleanup_preview() -> None:
-    (THEME_DIR / f"{PREVIEW_NAME}.json").unlink(missing_ok=True)
+    for name in (PREVIEW_NAME, LEGACY_PREVIEW_NAME):
+        (THEME_DIR / f"{name}.json").unlink(missing_ok=True)
 
 
 def _run_legacy(name: str) -> tuple[bool, str]:
