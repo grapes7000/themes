@@ -24,6 +24,11 @@ from theme_schema import (
     ALL_ROLES,
     ROLE_LABELS,
     contrast_ratio,
+    COMPONENT_FIELDS,
+    WINDOW_PRESETS,
+    apply_window_preset,
+    deep_get,
+    deep_set,
     ensure_theme_schema,
     generate_palette_from_seed,
     is_hex,
@@ -70,6 +75,25 @@ STYLE_FIELDS = (
     ("shadow_offset", "Shadow offset", "int"),
     ("gaps", "Gaps", "int"),
     ("border_width", "Border width", "int"),
+)
+
+QUICKSHELL_FIELDS = (
+    ("components.homepage.bar_position", "Bar position", "choice", ("top", "bottom")),
+    ("components.homepage.bar_surface_role", "Bar surface", "role", ()),
+    ("components.homepage.bar_opacity", "Bar opacity", "float", ()),
+    ("components.homepage.bar_outline_role", "Bar outline", "role", ()),
+    ("components.homepage.bar_outline_opacity", "Bar outline opacity", "float", ()),
+    ("components.homepage.drawer_width", "Drawer width", "int", ()),
+    ("components.homepage.drawer_surface_role", "Drawer surface", "role", ()),
+    ("components.homepage.drawer_opacity", "Drawer opacity", "float", ()),
+    ("components.homepage.drawer_outline_role", "Drawer outline", "role", ()),
+    ("components.homepage.drawer_outline_opacity", "Drawer outline opacity", "float", ()),
+    ("components.homepage.card_opacity", "Homepage card opacity", "float", ()),
+    ("components.homepage.image_fit", "Wallpaper fit", "choice", ("cover", "contain", "fill", "fit")),
+    ("components.homepage.slideshow_seconds", "Slideshow seconds", "int", ()),
+    ("components.homepage.image_overlay_opacity", "Wallpaper overlay", "float", ()),
+    ("components.homepage.image_dimming", "Wallpaper dimming", "float", ()),
+    ("components.homepage.transition_ms", "Homepage transition (ms)", "int", ()),
 )
 
 
@@ -255,6 +279,38 @@ class ThemeStudioBridge(QObject):
                  "value": str(style.get(key, ""))}
                 for key, label, kind in STYLE_FIELDS]
         return json.dumps(rows)
+
+    @Property(str, notify=stateChanged)
+    def windowRowsJson(self) -> str:  # noqa: N802
+        draft = self._editor.draft if self._editor else {}
+        rows = []
+        for field in COMPONENT_FIELDS.get("windows", ()):
+            rows.append({
+                "path": field.path,
+                "label": field.label,
+                "kind": field.kind,
+                "value": str(deep_get(draft, field.path, "")),
+                "choices": list(field.choices),
+                "advanced": bool(field.advanced),
+            })
+        return json.dumps(rows)
+
+    @Property(str, notify=stateChanged)
+    def windowPresetsJson(self) -> str:  # noqa: N802
+        return json.dumps(list(WINDOW_PRESETS))
+
+    @Property(str, notify=stateChanged)
+    def quickshellRowsJson(self) -> str:  # noqa: N802
+        draft = self._editor.draft if self._editor else {}
+        return json.dumps([
+            {"path": path, "label": label, "kind": kind, "choices": list(choices),
+             "value": str(deep_get(draft, path, ""))}
+            for path, label, kind, choices in QUICKSHELL_FIELDS
+        ])
+
+    @Property(str, constant=True)
+    def roleNamesJson(self) -> str:  # noqa: N802
+        return json.dumps(list(ALL_ROLES))
 
     @Property(str, notify=stateChanged)
     def validationJson(self) -> str:  # noqa: N802
@@ -479,6 +535,61 @@ class ThemeStudioBridge(QObject):
         )
         self._set_status(f"Updated {key}")
         self.stateChanged.emit()
+
+    def _set_component_value(self, path: str, value: str, fields: tuple[Any, ...]) -> None:
+        editor = self._editor_or_none()
+        field = next((item for item in fields if item.path == path), None)
+        if not editor or not field:
+            return
+        raw = value.strip()
+        try:
+            if field.kind == "int":
+                parsed: Any = int(raw)
+            elif field.kind == "float":
+                parsed = float(raw)
+            elif field.kind == "bool":
+                lowered = raw.lower()
+                if lowered not in {"true", "false"}:
+                    raise ValueError("expected true or false")
+                parsed = lowered == "true"
+            elif field.kind == "choice":
+                if raw not in field.choices:
+                    raise ValueError("choose " + ", ".join(field.choices))
+                parsed = raw
+            elif field.kind == "role":
+                if raw not in ALL_ROLES and not is_hex(raw):
+                    raise ValueError("choose a semantic role or #RRGGBB")
+                parsed = raw
+            else:
+                parsed = raw
+            if field.minimum is not None and parsed < field.minimum:
+                raise ValueError(f"minimum is {field.minimum}")
+            if field.maximum is not None and parsed > field.maximum:
+                raise ValueError(f"maximum is {field.maximum}")
+        except (TypeError, ValueError) as exc:
+            self._set_status(f"{field.label}: invalid value ({exc})")
+            return
+        editor.mutate(f"Set {field.label}", lambda draft: deep_set(draft, path, parsed))
+        self._set_status(f"Updated {field.label}")
+        self.stateChanged.emit()
+
+    @Slot(str, str)
+    def setWindowValue(self, path: str, value: str) -> None:  # noqa: N802
+        self._set_component_value(path, value, tuple(COMPONENT_FIELDS.get("windows", ())))
+
+    @Slot(str)
+    def setWindowPreset(self, name: str) -> None:  # noqa: N802
+        editor = self._editor_or_none()
+        if not editor or name not in WINDOW_PRESETS:
+            return
+        editor.mutate(f"Apply {name.replace('_', ' ')} window preset", lambda draft: apply_window_preset(draft, name))
+        self._set_status(f"Applied {name.replace('_', ' ')} window preset")
+        self.stateChanged.emit()
+
+    @Slot(str, str)
+    def setQuickshellValue(self, path: str, value: str) -> None:  # noqa: N802
+        specs = tuple(type("Field", (), {"path": item[0], "label": item[1], "kind": item[2], "choices": item[3], "minimum": None, "maximum": None}) for item in QUICKSHELL_FIELDS)
+        self._set_component_value(path, value, specs)
 
     @Slot(bool)
     def setDark(self, enabled: bool) -> None:  # noqa: N802
