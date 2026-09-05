@@ -112,6 +112,12 @@ class ThemeStudioBridge(QObject):
         self._status = "Theme Studio ready"
         self._live_preview = True
         self._restore_name = theme_runtime.active_theme()
+        # Shape/texture profiles live outside individual theme JSON files.  A
+        # manual Windows edit temporarily disables the relevant profile so the
+        # requested value can actually reach Hyprland; retain the exact prior
+        # profile so Cancel remains a true cancel.
+        self._effects_snapshot = self._read_effects_profile()
+        self._effects_modified = False
         self._wallpaper_dir = Path(os.environ.get(
             "THEME_STUDIO_WALLPAPER_DIR", theme_runtime.CFG / "hypr" / "wallpapers"
         )).expanduser()
@@ -125,6 +131,47 @@ class ThemeStudioBridge(QObject):
         self._eyedropper_path = ""
         self._load_initial(initial_theme)
         self.refreshWallpapers()
+
+    @staticmethod
+    def _read_effects_profile() -> dict[str, Any] | None:
+        try:
+            import theme_effects
+            path = Path(theme_effects.PROFILE_PATH)
+            if not path.is_file():
+                return None
+            value = json.loads(path.read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else None
+        except (ImportError, OSError, ValueError):
+            return None
+
+    def _clear_effect_override(self, axis: str) -> None:
+        try:
+            import theme_effects
+            active = theme_effects.profile_shape() if axis == "shape" else theme_effects.profile_texture()
+            if not active:
+                return
+            if axis == "shape":
+                theme_effects.save_shape(None)
+            else:
+                theme_effects.save_texture(None)
+            self._effects_modified = True
+        except (ImportError, OSError, ValueError):
+            pass
+
+    def _restore_effect_overrides(self) -> bool:
+        if not self._effects_modified:
+            return False
+        try:
+            import theme_effects
+            profile_path = Path(theme_effects.PROFILE_PATH)
+            if self._effects_snapshot is None:
+                profile_path.unlink(missing_ok=True)
+            else:
+                theme_effects._save_profile_raw(dict(self._effects_snapshot))
+        except (ImportError, OSError, ValueError):
+            return False
+        self._effects_modified = False
+        return True
 
     def _load_initial(self, initial_theme: str | None) -> None:
         names = list_themes()
@@ -152,6 +199,8 @@ class ThemeStudioBridge(QObject):
     def _open_editor(self, name: str, *, preview: bool) -> None:
         if self._editor and self._editor.dirty:
             self._editor.cancel()
+            if self._restore_effect_overrides() and self._restore_name:
+                theme_runtime.apply_saved_theme(self._restore_name)
         editor = ThemeEditor(
             name,
             preview_callback=self._preview,
@@ -581,6 +630,22 @@ class ThemeStudioBridge(QObject):
 
     @Slot(str, str)
     def setWindowValue(self, path: str, value: str) -> None:  # noqa: N802
+        # Effects profiles are global, post-theme overrides.  Leaving one
+        # enabled while editing the same axis makes a committed value appear
+        # inert (for example, uniform-8 forces every radius back to 8).
+        # Manual editor input takes precedence for the axis it owns.
+        if path in {
+            "components.windows.corner_radius", "components.windows.rounding_power",
+            "components.windows.border_width", "components.windows.gaps_in",
+            "components.windows.gaps_out",
+        }:
+            self._clear_effect_override("shape")
+        elif path.startswith((
+            "components.windows.blur.", "components.windows.shadow.",
+            "components.windows.active_opacity", "components.windows.inactive_opacity",
+            "components.windows.inactive_dim",
+        )):
+            self._clear_effect_override("texture")
         self._set_component_value(path, value, tuple(COMPONENT_FIELDS.get("windows", ())))
 
     @Slot(str)
@@ -588,6 +653,8 @@ class ThemeStudioBridge(QObject):
         editor = self._editor_or_none()
         if not editor or name not in WINDOW_PRESETS:
             return
+        self._clear_effect_override("shape")
+        self._clear_effect_override("texture")
         editor.mutate(f"Apply {name.replace('_', ' ')} window preset", lambda draft: apply_window_preset(draft, name))
         self._set_status(f"Applied {name.replace('_', ' ')} window preset")
         self.stateChanged.emit()
@@ -661,6 +728,8 @@ class ThemeStudioBridge(QObject):
             path = self._editor.save(apply=False)
             theme_runtime.apply_saved_theme(self._editor.theme_name)
             self._restore_name = self._editor.theme_name
+            self._effects_snapshot = self._read_effects_profile()
+            self._effects_modified = False
             self._set_status(f"Saved & applied {path.name}")
             self.stateChanged.emit()
             self.themesChanged.emit()
@@ -675,6 +744,8 @@ class ThemeStudioBridge(QObject):
             return
         try:
             self._editor.cancel()
+            if self._restore_effect_overrides() and self._restore_name:
+                theme_runtime.apply_saved_theme(self._restore_name)
             self._set_status("Changes cancelled; desktop restored")
         except Exception as exc:
             self._set_status(f"Restore failed: {exc}")
@@ -896,5 +967,7 @@ class ThemeStudioBridge(QObject):
                 self._restore(self._editor.theme_name)
             else:
                 theme_runtime.cleanup_preview()
+            if self._restore_effect_overrides() and self._restore_name:
+                theme_runtime.apply_saved_theme(self._restore_name)
         except Exception:
             theme_runtime.cleanup_preview()
