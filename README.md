@@ -1,7 +1,7 @@
 # themes
 
 A portable, JSON-driven **theme engine** for a Wayland/Hyprland desktop. One
-command re-skins **Hyprland + Waybar + kitty + starship + Neovim** at once — colors,
+command re-skins **Hyprland + kitty + starship + Neovim** at once — colors,
 blur, shadows, corner radius, gaps *and* a matching generated wallpaper — all
 from a single `theme.json` per theme.
 
@@ -25,7 +25,6 @@ Running `theme <name>` reads that file and **generates** the per-app config:
 
 ```
 themes/<name>.json ──► ~/.config/hypr/generated/theme.conf     (borders, blur, shadow, rounding)
-                  ├──► ~/.config/waybar/generated/theme.css     (@define-color …)
                   ├──► ~/.config/kitty/generated/theme.conf      (bg/fg + 16 ANSI colors)
                   ├──► ~/.config/starship.toml                   (prompt palette)
                   ├──► ~/.oh-my-zsh/custom/themes/theme-engine.zsh-theme  (oh-my-zsh prompt)
@@ -61,7 +60,7 @@ writes a matching `~/.config/theme-engine/targets.conf` the first time it
 runs, enabling only the targets whose apps it actually finds on `PATH`. It
 won't touch that file again once it exists — edit it by hand to add/remove
 targets later (full list: [docs/DE-THEMING.md](docs/DE-THEMING.md)).
-If any of kitty/starship/neovim/zsh (+ waybar/wofi/dunst/hyprlock on
+If any of kitty/starship/neovim/zsh (+ wofi/dunst/hyprlock on
 Hyprland) or oh-my-zsh are missing, it also offers — with a single y/N
 prompt, never silently — to `pacman install` them and run oh-my-zsh's
 official installer.

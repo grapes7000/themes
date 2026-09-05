@@ -38,7 +38,6 @@ All UI elements use roles from this contract. Theme JSONs define the **core** ro
 
 ## Generator usage
 
-- **Waybar** (`theme.css`): all core + semantic roles as `@define-color`
 - **Hyprland** (`theme.conf`): core vars + `$group_active`, `$group_inactive`, `$group_locked`, `$group_text`
 - **Dunst** (`dunstrc`): urgency levels use `info`/`accent`/`urgent` frame colors
 - **Wofi** (`colors.css`): adds `hover`, `selected`, `disabled`, `on_accent`

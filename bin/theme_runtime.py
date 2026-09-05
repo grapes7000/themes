@@ -15,7 +15,6 @@ from typing import Any
 
 from theme_components import apply_all
 from theme_schema import dump_json, ensure_theme_schema, safe_theme_name
-import theme_waybar
 
 CFG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
@@ -383,23 +382,15 @@ def _sync_noctalia(name: str) -> tuple[bool, str]:
     return proc.returncode == 0, message
 
 
-def _apply_waybar(theme: dict[str, Any], *, restart: bool) -> dict[str, Path]:
-    if not target_enabled("waybar"):
-        return {}
-    return theme_waybar.apply(theme, restart=restart)
-
-
-def apply_studio_overrides(name: str, *, restart_waybar: bool = False, components: list[str] | None = None) -> dict[str, Any]:
+def apply_studio_overrides(name: str, *, components: list[str] | None = None) -> dict[str, Any]:
     theme = load_theme(name)
     component_result = apply_all(theme, components)
-    waybar_paths = _apply_waybar(theme, restart=restart_waybar)
     hypr_ok, hypr_message = _reload_hyprland()
     wallpaper_ok, wallpaper_message = _apply_static_wallpaper(name)
     starship_ok, starship_message = _sync_starship_runtime(theme)
     return {
         "name": name,
         "components": component_result,
-        "waybar": {k: str(v) for k, v in waybar_paths.items()},
         "hyprland_ok": hypr_ok,
         "hyprland_message": hypr_message,
         "wallpaper_ok": wallpaper_ok,
@@ -409,7 +400,7 @@ def apply_studio_overrides(name: str, *, restart_waybar: bool = False, component
     }
 
 
-def apply_theme(name: str, *, restart_waybar: bool = False, components: list[str] | None = None) -> dict[str, Any]:
+def apply_theme(name: str, *, components: list[str] | None = None) -> dict[str, Any]:
     theme = load_theme(name)
     legacy_ok, legacy_message = _run_legacy(name)
     if not legacy_ok:
@@ -417,7 +408,6 @@ def apply_theme(name: str, *, restart_waybar: bool = False, components: list[str
 
     semantic_ok, semantic_message = _sync_semantic_wallpaper(name)
     component_result = apply_all(theme, components)
-    waybar_paths = _apply_waybar(theme, restart=restart_waybar)
     noctalia_ok, noctalia_message = _sync_noctalia(name)
 
     hypr_ok, hypr_message = _reload_hyprland()
@@ -439,7 +429,6 @@ def apply_theme(name: str, *, restart_waybar: bool = False, components: list[str
         "noctalia_ok": noctalia_ok,
         "noctalia_message": noctalia_message,
         "components": component_result,
-        "waybar": {k: str(v) for k, v in waybar_paths.items()},
     }
 
 
@@ -457,4 +446,4 @@ def restore_theme(name: str) -> dict[str, Any]:
 
 def apply_saved_theme(name: str) -> dict[str, Any]:
     cleanup_preview()
-    return apply_theme(name, restart_waybar=False)
+    return apply_theme(name)

@@ -27,7 +27,7 @@ The first UI intentionally covers a useful vertical slice rather than claiming T
 
 ## Still owned by the TUI
 
-Until migrated, keep using `theme tui` for the deeper component editors, Waybar layout manipulation, wallpaper studio, comparison/search flows, recovery UI, advanced inspector, and theme management operations.
+Until migrated, keep using `theme tui` for the deeper component editors, comparison/search flows, recovery UI, advanced inspector, and theme management operations.
 
 ## Packaging
 

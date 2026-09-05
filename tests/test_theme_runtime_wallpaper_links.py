@@ -19,9 +19,6 @@ schema.ensure_theme_schema = lambda data: data
 schema.safe_theme_name = lambda name: name
 sys.modules.setdefault("theme_schema", schema)
 
-waybar = types.ModuleType("theme_waybar")
-waybar.apply = lambda *_args, **_kwargs: {}
-sys.modules.setdefault("theme_waybar", waybar)
 
 import theme_runtime
 

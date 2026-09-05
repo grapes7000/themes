@@ -113,7 +113,6 @@ Running `theme <name>` writes (never edit these by hand):
 
 - `~/.config/hypr/generated/theme.conf` — `general{}` border colors + gaps,
   `decoration{}` rounding/opacity/blur/shadow, and `$color` variables.
-- `~/.config/waybar/generated/theme.css` — `@define-color` for each role.
 - `~/.config/kitty/generated/theme.conf` — `background`/`foreground` + the 16
   `color0..15` ANSI entries + `font_size`.
 - `~/.config/starship.toml` — a `[palettes.theme]` block + prompt styling.

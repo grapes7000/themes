@@ -20,7 +20,7 @@ integration, including missing dependencies and slower final-only targets.
 
 In Hyprland you can also press **Super+T** for a wofi picker, or run `theme-menu`.
 
-Each switch regenerates and live-reloads Hyprland, Waybar, kitty, starship,
+Each switch regenerates and live-reloads Hyprland, kitty, starship,
 Neovim, wofi, rofi, dunst, hyprlock — and sets a matching wallpaper.
 
 ---
@@ -73,7 +73,6 @@ disable. Some take a value:
 
 ```
 hypr
-waybar
 kitty
 wofi
 rofi
@@ -114,8 +113,6 @@ as they were.
   **Super+Shift+?**).
 - **Super+B** — themed Bitwarden picker (needs `rbw` + `rofi-rbw`; see the repo
   README).
-- Waybar shows a VPN indicator: 🔒 + VPN IP when protected, ⚠ + exposed IP when
-  off.
 
 ---
 

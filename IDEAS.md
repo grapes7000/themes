@@ -23,9 +23,6 @@ Ideas discovered during Phase 1 and Phase 2A implementation. None of these are s
 - Control center (volume, brightness, network, bluetooth)
 - Logout menu / session manager
 
-## Waybar
-
-- Waybar layout redesign with effects-aware styling
 - Per-module theming based on effects preset
 
 ## Launcher

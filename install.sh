@@ -66,7 +66,7 @@ for module in theme_starship.py theme_effects.py theme_homepage.py theme_editor.
 done
 mkdir -p "$CFG/theme-engine/ui-styles"
 install -m644 "$REPO"/ui-styles/*.json "$CFG/theme-engine/ui-styles/"
-for module in theme_schema.py theme_preview.py theme_waybar.py theme_components.py theme_tui_widgets.py theme_tui.py; do
+for module in theme_schema.py theme_preview.py theme_components.py theme_tui_widgets.py theme_tui.py; do
     install -m644 "$STUDIO_TMP/$module" "$HOME/.local/bin/$module"
 done
 mkdir -p "$HOME/.local/share/doc/theme-studio"
@@ -113,7 +113,6 @@ write_targets_conf() {
                 ;;
             full)
                 echo hypr
-                echo waybar
                 emit_terminal_targets
                 echo wallpaper
                 echo wofi
@@ -126,7 +125,6 @@ write_targets_conf() {
                 case "$de" in
                     hyprland)
                         echo hypr
-                        opt waybar waybar
                         emit_terminal_targets
                         opt wallpaper hyprpaper
                         opt wofi wofi
