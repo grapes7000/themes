@@ -9,6 +9,7 @@ Item {
     property var rows: JSON.parse(studioBridge.windowRowsJson)
     property var presets: JSON.parse(studioBridge.windowPresetsJson)
     property var roles: JSON.parse(studioBridge.roleNamesJson)
+    property bool advancedFields: false
     Connections { target: studioBridge; function onStateChanged() { root.rows = JSON.parse(studioBridge.windowRowsJson) } }
 
     ScrollView {
@@ -40,11 +41,22 @@ Item {
             SectionCard {
                 Layout.fillWidth: true
                 title: "Fine tune"
+                subtitle: root.advancedFields ? "All Windows fields. Left/Right adjusts a focused slider by one TUI step." : "Simple fields. Show advanced fields for the full TUI Windows room."
+                RowLayout {
+                    Layout.fillWidth: true
+                    SecondaryButton {
+                        text: root.advancedFields ? "Simple fields" : "Show advanced"
+                        onClicked: root.advancedFields = !root.advancedFields
+                    }
+                    Item { Layout.fillWidth: true }
+                    SecondaryButton { text: "Reset Windows"; onClicked: studioBridge.resetWindows() }
+                }
                 Repeater {
                     model: root.rows
                     delegate: RowLayout {
                         required property var modelData
                         Layout.fillWidth: true
+                        visible: !modelData.advanced || root.advancedFields
                         spacing: Theme.spacingSmall
                         Text { text: modelData.label; color: Theme.textSecondary; font.family: Theme.fontFamily; font.pixelSize: 13; Layout.preferredWidth: 210; elide: Text.ElideRight }
                         ThemedComboBox {
@@ -65,12 +77,39 @@ Item {
                             visible: modelData.kind === "bool"
                             checked: modelData.value === "True" || modelData.value === "true"
                             onToggled: studioBridge.setWindowValue(modelData.path, checked ? "true" : "false")
+                            Keys.onLeftPressed: function(event) {
+                                studioBridge.adjustWindowValue(modelData.path, -1)
+                                event.accepted = true
+                            }
+                            Keys.onRightPressed: function(event) {
+                                studioBridge.adjustWindowValue(modelData.path, 1)
+                                event.accepted = true
+                            }
+                        }
+                        Slider {
+                            id: numericSlider
+                            visible: modelData.kind === "int" || modelData.kind === "float"
+                            from: modelData.minimum === null ? 0 : modelData.minimum
+                            to: modelData.maximum === null ? 100 : modelData.maximum
+                            stepSize: modelData.step === null ? 1 : modelData.step
+                            value: Number(modelData.value)
+                            Layout.fillWidth: true
+                            Accessible.name: modelData.label
+                            Keys.onLeftPressed: function(event) {
+                                studioBridge.adjustWindowValue(modelData.path, -1)
+                                event.accepted = true
+                            }
+                            Keys.onRightPressed: function(event) {
+                                studioBridge.adjustWindowValue(modelData.path, 1)
+                                event.accepted = true
+                            }
+                            onMoved: studioBridge.setWindowValue(modelData.path, String(value))
                         }
                         TextField {
                             visible: modelData.kind !== "choice" && modelData.kind !== "role" && modelData.kind !== "bool"
                             text: modelData.value
                             selectByMouse: true
-                            Layout.fillWidth: true
+                            Layout.preferredWidth: 88
                             color: Theme.textPrimary
                             background: Rectangle { color: Theme.bgElevated; border.color: parent.activeFocus ? Theme.focusRing : Theme.border; radius: Theme.radiusSmall }
                             onEditingFinished: studioBridge.setWindowValue(modelData.path, text)

@@ -96,7 +96,6 @@ QUICKSHELL_FIELDS = (
     ("components.homepage.transition_ms", "Homepage transition (ms)", "int", ()),
 )
 
-
 class ThemeStudioBridge(QObject):
     stateChanged = Signal()
     themesChanged = Signal()
@@ -347,6 +346,9 @@ class ThemeStudioBridge(QObject):
                 "value": str(deep_get(draft, field.path, "")),
                 "choices": list(field.choices),
                 "advanced": bool(field.advanced),
+                "minimum": field.minimum,
+                "maximum": field.maximum,
+                "step": field.step,
             })
         return json.dumps(rows)
 
@@ -647,6 +649,42 @@ class ThemeStudioBridge(QObject):
         )):
             self._clear_effect_override("texture")
         self._set_component_value(path, value, tuple(COMPONENT_FIELDS.get("windows", ())))
+
+    @Slot(str, int)
+    def adjustWindowValue(self, path: str, direction: int) -> None:  # noqa: N802
+        """GUI equivalent of the TUI editor's left/right field adjustment."""
+        editor = self._editor_or_none()
+        field = next((item for item in COMPONENT_FIELDS.get("windows", ()) if item.path == path), None)
+        if not editor or not field or not direction:
+            return
+        value = deep_get(editor.draft, path)
+        if field.kind == "bool":
+            new_value: Any = not bool(value)
+        elif field.kind in {"int", "float"}:
+            new_value = float(value) + field.step * (1 if direction > 0 else -1)
+            if field.minimum is not None:
+                new_value = max(field.minimum, new_value)
+            if field.maximum is not None:
+                new_value = min(field.maximum, new_value)
+            new_value = int(round(new_value)) if field.kind == "int" else round(new_value, 4)
+        elif field.kind == "choice":
+            choices = list(field.choices)
+            new_value = choices[(choices.index(value) + (1 if direction > 0 else -1)) % len(choices)] if value in choices else choices[0]
+        elif field.kind == "role":
+            choices = list(ALL_ROLES)
+            new_value = choices[(choices.index(value) + (1 if direction > 0 else -1)) % len(choices)] if value in choices else choices[0]
+        else:
+            return
+        self.setWindowValue(path, str(new_value).lower() if isinstance(new_value, bool) else str(new_value))
+
+    @Slot()
+    def resetWindows(self) -> None:  # noqa: N802
+        editor = self._editor_or_none()
+        if not editor:
+            return
+        editor.reset_section("components.windows")
+        self._set_status("Reset Windows")
+        self.stateChanged.emit()
 
     @Slot(str)
     def setWindowPreset(self, name: str) -> None:  # noqa: N802
