@@ -16,10 +16,20 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QGuiApplication, QImage
 
 import theme_runtime
 from theme_editor import EditorError, ThemeEditor, list_themes
+from theme_schema import (
+    ALL_ROLES,
+    ROLE_LABELS,
+    contrast_ratio,
+    ensure_theme_schema,
+    generate_palette_from_seed,
+    is_hex,
+    palette_from_wallpaper,
+    safe_theme_name,
+)
 
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _WALLPAPER_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".jxl"}
@@ -70,6 +80,7 @@ class ThemeStudioBridge(QObject):
     wallpapersChanged = Signal()
     selectedWallpaperChanged = Signal()
     recolorChanged = Signal()
+    eyedropperChanged = Signal()
 
     def __init__(self, initial_theme: str | None = None) -> None:
         super().__init__()
@@ -86,6 +97,8 @@ class ThemeStudioBridge(QObject):
         self._regions: list[dict[str, str]] = []
         self._recolor_preview_url = ""
         self._recolor_preview_theme = ""
+        self._eyedropper_image: QImage | None = None
+        self._eyedropper_path = ""
         self._load_initial(initial_theme)
         self.refreshWallpapers()
 
@@ -172,6 +185,10 @@ class ThemeStudioBridge(QObject):
     def semanticRolesJson(self) -> str:  # noqa: N802
         return json.dumps(_SEMANTIC_ROLES)
 
+    @Property(str, notify=eyedropperChanged)
+    def eyedropperImageUrl(self) -> str:  # noqa: N802
+        return QUrl.fromLocalFile(self._eyedropper_path).toString() if self._eyedropper_path else ""
+
     @Property(str, notify=stateChanged)
     def themeName(self) -> str:  # noqa: N802
         return self._editor.theme_name if self._editor else ""
@@ -209,6 +226,26 @@ class ThemeStudioBridge(QObject):
         roles = self._editor.draft.get("roles", {}) if self._editor else {}
         rows = [{"key": key, "label": label, "value": str(roles.get(key, ""))}
                 for key, label in ROLE_FIELDS]
+        return json.dumps(rows)
+
+    @Property(str, notify=stateChanged)
+    def paletteRowsJson(self) -> str:  # noqa: N802
+        """Every semantic role, with a readable label and contrast health."""
+        roles = self._editor.draft.get("roles", {}) if self._editor else {}
+        background = str(roles.get("bg", "#000000"))
+        rows = []
+        for key in ALL_ROLES:
+            value = str(roles.get(key, ""))
+            try:
+                contrast = round(contrast_ratio(value, background), 2) if is_hex(value) and is_hex(background) else 0
+            except (TypeError, ValueError):
+                contrast = 0
+            rows.append({
+                "key": key,
+                "label": ROLE_LABELS.get(key, key.replace("_", " ").title()),
+                "value": value,
+                "contrast": contrast,
+            })
         return json.dumps(rows)
 
     @Property(str, notify=stateChanged)
@@ -257,6 +294,157 @@ class ThemeStudioBridge(QObject):
         )
         self._set_status(f"Updated {key}")
         self.stateChanged.emit()
+
+    def _replace_palette(self, label: str, roles: dict[str, str], *, dark: bool | None = None) -> None:
+        editor = self._editor_or_none()
+        if not editor:
+            return
+        clean = {key: value.upper() for key, value in roles.items() if key in ALL_ROLES and is_hex(value)}
+        if not clean:
+            self._set_status("Palette contains no valid #RRGGBB colors")
+            return
+
+        def mutate(draft: dict[str, Any]) -> None:
+            draft.setdefault("roles", {}).update(clean)
+            if dark is not None:
+                draft["dark"] = bool(dark)
+
+        editor.mutate(label, mutate)
+        self._set_status(label)
+        self.stateChanged.emit()
+
+    @Slot(str, bool)
+    def generatePalette(self, seed: str, dark: bool) -> None:  # noqa: N802
+        seed = seed.strip()
+        if not is_hex(seed):
+            self._set_status("Seed color must be #RRGGBB")
+            return
+        self._replace_palette("Generated palette from seed", generate_palette_from_seed(seed, dark), dark=dark)
+
+    @Slot()
+    def generatePaletteFromSelectedWallpaper(self) -> None:  # noqa: N802
+        path = self._selected_wallpaper_path()
+        if not path:
+            self._set_status("Select a wallpaper first")
+            return
+        try:
+            self._replace_palette(
+                f"Generated palette from {path.name}",
+                palette_from_wallpaper(path, self.dark),
+                dark=self.dark,
+            )
+        except Exception as exc:
+            self._set_status(f"Could not generate palette from wallpaper: {exc}")
+
+    @Slot(str)
+    def importPalette(self, filename: str) -> None:  # noqa: N802
+        path = Path(QUrl(filename).toLocalFile() or filename).expanduser()
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            roles = payload.get("roles", payload) if isinstance(payload, dict) else {}
+            if not isinstance(roles, dict):
+                raise ValueError("expected a palette object or a theme with a roles object")
+            self._replace_palette(f"Imported palette from {path.name}", roles)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            self._set_status(f"Could not import palette: {exc}")
+
+    @Slot(str)
+    def exportPalette(self, filename: str) -> None:  # noqa: N802
+        path = Path(QUrl(filename).toLocalFile() or filename).expanduser()
+        if not path.name:
+            self._set_status("Choose a file name for the exported palette")
+            return
+        try:
+            roles = self._editor.draft.get("roles", {}) if self._editor else {}
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix=".palette-", suffix=".json", dir=path.parent)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump({"name": self.themeName, "dark": self.dark, "roles": roles}, handle, indent=2)
+                handle.write("\n")
+            os.replace(temporary, path)
+            self._set_status(f"Exported palette to {path}")
+        except OSError as exc:
+            self._set_status(f"Could not export palette: {exc}")
+
+    @Slot(str)
+    def duplicateTheme(self, name: str) -> None:  # noqa: N802
+        editor = self._editor_or_none()
+        target = safe_theme_name(name)
+        if not editor or not name.strip():
+            self._set_status("Enter a name for the new theme")
+            return
+        try:
+            path = editor.save(target, apply=False)
+            self._restore_name = target
+            theme_runtime.apply_saved_theme(target)
+            self._set_status(f"Created and applied {path.stem}")
+            self.stateChanged.emit()
+            self.themesChanged.emit()
+        except (EditorError, OSError, ValueError) as exc:
+            self._set_status(f"Could not create theme: {exc}")
+
+    @Slot(str, str, bool)
+    def createTheme(self, name: str, seed: str, dark: bool) -> None:  # noqa: N802
+        target = safe_theme_name(name)
+        if not name.strip():
+            self._set_status("Enter a name for the new theme")
+            return
+        if not is_hex(seed.strip()):
+            self._set_status("Seed color must be #RRGGBB")
+            return
+        if target in list_themes():
+            self._set_status(f"Theme already exists: {target}")
+            return
+        base_style = dict(self._editor.draft.get("style", {})) if self._editor else {}
+        data = ensure_theme_schema({"name": target, "dark": dark, "roles": generate_palette_from_seed(seed, dark), "style": base_style})
+        self._editor = ThemeEditor.from_data(target, data, preview_callback=self._preview, restore_callback=self._restore)
+        self._editor.desktop_preview = self._live_preview
+        try:
+            path = self._editor.save(apply=False)
+            self._restore_name = target
+            theme_runtime.apply_saved_theme(target)
+            self._set_status(f"Created and applied {path.stem}")
+            self.stateChanged.emit()
+            self.themesChanged.emit()
+        except (EditorError, OSError, ValueError) as exc:
+            self._set_status(f"Could not create theme: {exc}")
+
+    @Slot(result=str)
+    def captureScreenForEyedropper(self) -> str:  # noqa: N802
+        """Capture the primary display for the QML pixel-sampling overlay."""
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            self._set_status("No screen is available for the eyedropper")
+            return ""
+        image = screen.grabWindow(0).toImage()
+        if image.isNull():
+            self._set_status("Could not capture the screen for the eyedropper")
+            return ""
+        fd, temporary = tempfile.mkstemp(prefix="theme-eyedropper-", suffix=".png")
+        os.close(fd)
+        try:
+            if not image.save(temporary, "PNG"):
+                raise OSError("Qt could not encode the screen capture")
+            previous = self._eyedropper_path
+            self._eyedropper_path = temporary
+            self._eyedropper_image = image
+            if previous:
+                Path(previous).unlink(missing_ok=True)
+            self.eyedropperChanged.emit()
+            return self.eyedropperImageUrl
+        except OSError as exc:
+            Path(temporary).unlink(missing_ok=True)
+            self._set_status(f"Could not prepare eyedropper: {exc}")
+            return ""
+
+    @Slot(float, float, float, float, result=str)
+    def screenColorAt(self, x: float, y: float, view_width: float, view_height: float) -> str:  # noqa: N802
+        image = self._eyedropper_image
+        if image is None or image.isNull() or view_width <= 0 or view_height <= 0:
+            return ""
+        pixel_x = max(0, min(image.width() - 1, round(x * image.width() / view_width)))
+        pixel_y = max(0, min(image.height() - 1, round(y * image.height() / view_height)))
+        return image.pixelColor(pixel_x, pixel_y).name().upper()
 
     @Slot(str, str)
     def setStyle(self, key: str, value: str) -> None:  # noqa: N802
