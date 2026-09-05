@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,13 @@ from theme_editor import EditorError, ThemeEditor, list_themes
 
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _WALLPAPER_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".jxl"}
+_SEMANTIC_ROLES = (
+    "bg", "bg_alt", "text", "text_dim", "accent", "accent2", "focus", "success",
+    "warning", "info", "urgent", "ansi_black", "ansi_red", "ansi_green", "ansi_yellow",
+    "ansi_blue", "ansi_magenta", "ansi_cyan", "ansi_white", "ansi_br_black",
+    "ansi_br_red", "ansi_br_green", "ansi_br_yellow", "ansi_br_blue", "ansi_br_magenta",
+    "ansi_br_cyan", "ansi_br_white",
+)
 
 ROLE_FIELDS = (
     ("bg", "Background"),
@@ -60,6 +69,7 @@ class ThemeStudioBridge(QObject):
     statusChanged = Signal()
     wallpapersChanged = Signal()
     selectedWallpaperChanged = Signal()
+    recolorChanged = Signal()
 
     def __init__(self, initial_theme: str | None = None) -> None:
         super().__init__()
@@ -72,6 +82,10 @@ class ThemeStudioBridge(QObject):
         )).expanduser()
         self._wallpapers: list[dict[str, str]] = []
         self._selected_wallpaper = -1
+        self._template_name = ""
+        self._regions: list[dict[str, str]] = []
+        self._recolor_preview_url = ""
+        self._recolor_preview_theme = ""
         self._load_initial(initial_theme)
         self.refreshWallpapers()
 
@@ -141,6 +155,22 @@ class ThemeStudioBridge(QObject):
         if 0 <= self._selected_wallpaper < len(self._wallpapers):
             return self._wallpapers[self._selected_wallpaper]["name"]
         return ""
+
+    @Property(str, notify=recolorChanged)
+    def recolorTemplateName(self) -> str:  # noqa: N802
+        return self._template_name
+
+    @Property(str, notify=recolorChanged)
+    def recolorRegionsJson(self) -> str:  # noqa: N802
+        return json.dumps(self._regions)
+
+    @Property(str, notify=recolorChanged)
+    def recolorPreviewUrl(self) -> str:  # noqa: N802
+        return self._recolor_preview_url
+
+    @Property(str, constant=True)
+    def semanticRolesJson(self) -> str:  # noqa: N802
+        return json.dumps(_SEMANTIC_ROLES)
 
     @Property(str, notify=stateChanged)
     def themeName(self) -> str:  # noqa: N802
@@ -394,6 +424,72 @@ class ThemeStudioBridge(QObject):
             return None
         return Path(self._wallpapers[self._selected_wallpaper]["path"])
 
+    def _wallgen(self, *args: str, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+        command = shutil.which("wallgen")
+        if not command:
+            raise OSError("wallgen is not installed; re-run install.sh")
+        return subprocess.run([command, *args], text=True, capture_output=True, timeout=timeout)
+
+    def _template_path(self) -> Path | None:
+        if not self._template_name:
+            return None
+        return theme_runtime.CFG / "theme-engine" / "wallpaper-templates" / self._template_name / "template.json"
+
+    def _load_recolor_template(self, name: str) -> bool:
+        self._template_name = name
+        path = self._template_path()
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8")) if path else {}
+            self._regions = [
+                {"source": str(item.get("source", "")), "role": str(item.get("role", "accent"))}
+                for item in payload.get("regions", []) if isinstance(item, dict)
+            ]
+            self.recolorChanged.emit()
+            return bool(self._regions)
+        except (OSError, json.JSONDecodeError) as exc:
+            self._set_status(f"Could not load recolor template: {exc}")
+            return False
+
+    def _save_recolor_regions(self) -> bool:
+        path = self._template_path()
+        if not path:
+            return False
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["regions"] = self._regions
+            fd, temporary = tempfile.mkstemp(prefix=".wallpaper-template-", suffix=".json", dir=path.parent)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+                handle.write("\n")
+            os.replace(temporary, path)
+            return True
+        except (OSError, json.JSONDecodeError) as exc:
+            self._set_status(f"Could not save recolor mappings: {exc}")
+            return False
+
+    def _bind_wallpaper_path(self, path: Path, theme: str) -> bool:
+        if theme not in list_themes():
+            self._set_status(f"Unknown theme: {theme}")
+            return False
+        image = QImage(str(path))
+        if image.isNull():
+            self._set_status(f"Could not decode {path.name}")
+            return False
+        destination = theme_runtime.CFG / "hypr" / "wallpapers" / f"{theme}.png"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=f".{theme}.", suffix=".png", dir=destination.parent)
+        os.close(fd)
+        temporary_path = Path(temporary)
+        try:
+            if not image.save(str(temporary_path), "PNG"):
+                raise OSError("Qt could not encode the image as PNG")
+            os.replace(temporary_path, destination)
+        except Exception as exc:
+            temporary_path.unlink(missing_ok=True)
+            self._set_status(f"Could not bind wallpaper: {exc}")
+            return False
+        return True
+
     @Slot()
     def applySelectedWallpaper(self) -> None:  # noqa: N802
         path = self._selected_wallpaper_path()
@@ -412,27 +508,68 @@ class ThemeStudioBridge(QObject):
         if not path:
             self._set_status("Select a wallpaper first")
             return
-        if theme not in list_themes():
-            self._set_status(f"Unknown theme: {theme}")
+        if self._bind_wallpaper_path(path, theme):
+            self._set_status(f"Bound {path.name} to {theme}; it will apply when that theme is selected")
+
+    @Slot()
+    def importSelectedForRecolor(self) -> None:  # noqa: N802
+        path = self._selected_wallpaper_path()
+        if not path:
+            self._set_status("Select a wallpaper first")
             return
-        image = QImage(str(path))
-        if image.isNull():
-            self._set_status(f"Could not decode {path.name}")
-            return
-        destination = theme_runtime.CFG / "hypr" / "wallpapers" / f"{theme}.png"
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(prefix=f".{theme}.", suffix=".png", dir=destination.parent)
-        os.close(fd)
-        temporary_path = Path(temporary)
+        name = re.sub(r"[^a-z0-9_-]+", "-", path.stem.lower()).strip("-_") or "wallpaper"
         try:
-            if not image.save(str(temporary_path), "PNG"):
-                raise OSError("Qt could not encode the image as PNG")
-            os.replace(temporary_path, destination)
-        except Exception as exc:
-            temporary_path.unlink(missing_ok=True)
-            self._set_status(f"Could not bind wallpaper: {exc}")
+            proc = self._wallgen("semantic", "import", str(path), "--name", name, "--yes")
+            if proc.returncode:
+                self._set_status((proc.stderr or proc.stdout or "wallgen import failed").strip())
+                return
+            if self._load_recolor_template(name):
+                self._recolor_preview_url = ""
+                self._recolor_preview_theme = ""
+                self.recolorChanged.emit()
+                self._set_status(f"Detected {len(self._regions)} semantic color regions")
+        except (OSError, subprocess.SubprocessError) as exc:
+            self._set_status(f"Could not import wallpaper: {exc}")
+
+    @Slot(int, str)
+    def setRecolorRole(self, index: int, role: str) -> None:  # noqa: N802
+        if not (0 <= index < len(self._regions)) or role not in _SEMANTIC_ROLES:
             return
-        self._set_status(f"Bound {path.name} to {theme}; it will apply when that theme is selected")
+        self._regions[index] = {**self._regions[index], "role": role}
+        if self._save_recolor_regions():
+            self._recolor_preview_url = ""
+            self._recolor_preview_theme = ""
+            self.recolorChanged.emit()
+
+    @Slot(str)
+    def previewRecolor(self, theme: str) -> None:  # noqa: N802
+        if not self._template_name or theme not in list_themes():
+            self._set_status("Import a wallpaper and choose a valid theme first")
+            return
+        try:
+            self._wallgen("semantic", "use", self._template_name)
+            proc = self._wallgen("semantic", "apply", theme)
+            if proc.returncode:
+                self._set_status((proc.stderr or proc.stdout or "wallgen render failed").strip())
+                return
+            output = Path((proc.stdout or "").strip().splitlines()[-1]).expanduser()
+            if not output.is_file():
+                self._set_status("wallgen did not return a rendered wallpaper")
+                return
+            self._recolor_preview_url = QUrl.fromLocalFile(str(output.resolve())).toString()
+            self._recolor_preview_theme = theme
+            self.recolorChanged.emit()
+            self._set_status(f"Previewing {self._template_name} with {theme}")
+        except (OSError, subprocess.SubprocessError, IndexError) as exc:
+            self._set_status(f"Could not preview recolor: {exc}")
+
+    @Slot(str)
+    def bindRecolorToTheme(self, theme: str) -> None:  # noqa: N802
+        if not self._recolor_preview_url or self._recolor_preview_theme != theme:
+            self.previewRecolor(theme)
+        path = Path(QUrl(self._recolor_preview_url).toLocalFile()) if self._recolor_preview_url else None
+        if path and self._bind_wallpaper_path(path, theme):
+            self._set_status(f"Bound recolored {self._template_name} to {theme}")
 
     @Slot()
     def closeSession(self) -> None:  # noqa: N802

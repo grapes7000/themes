@@ -8,11 +8,14 @@ Item {
     id: root
     property var wallpaperModel: JSON.parse(studioBridge.wallpapersJson)
     property var themeModel: JSON.parse(studioBridge.themesJson)
+    property var recolorRegions: JSON.parse(studioBridge.recolorRegionsJson)
+    property var semanticRoles: JSON.parse(studioBridge.semanticRolesJson)
 
     Connections {
         target: studioBridge
         function onWallpapersChanged() { root.wallpaperModel = JSON.parse(studioBridge.wallpapersJson) }
         function onThemesChanged() { root.themeModel = JSON.parse(studioBridge.themesJson) }
+        function onRecolorChanged() { root.recolorRegions = JSON.parse(studioBridge.recolorRegionsJson) }
     }
 
     ColumnLayout {
@@ -65,7 +68,7 @@ Item {
                 Image {
                     anchors.fill: parent
                     anchors.margins: 1
-                    source: studioBridge.selectedWallpaperUrl
+                    source: studioBridge.recolorPreviewUrl || studioBridge.selectedWallpaperUrl
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     cache: false
@@ -96,6 +99,35 @@ Item {
                     currentIndex: Math.max(0, root.themeModel.indexOf(studioBridge.themeName))
                 }
                 SecondaryButton { text: "Bind to theme"; enabled: studioBridge.selectedWallpaperUrl !== "" && themePicker.currentText !== ""; Layout.fillWidth: true; onClicked: studioBridge.bindSelectedWallpaper(themePicker.currentText) }
+
+                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.border }
+                Text { text: "Semantic recolor"; color: Theme.textSecondary; font.family: Theme.fontFamily; font.pixelSize: 12 }
+                SecondaryButton { text: studioBridge.recolorTemplateName ? "Re-import selected image" : "Import selected image"; enabled: studioBridge.selectedWallpaperUrl !== ""; Layout.fillWidth: true; onClicked: studioBridge.importSelectedForRecolor() }
+                ListView {
+                    id: regionsList
+                    visible: root.recolorRegions.length > 0
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? Math.min(150, contentHeight) : 0
+                    clip: true
+                    spacing: 4
+                    model: root.recolorRegions
+                    delegate: RowLayout {
+                        id: regionRow
+                        required property var modelData
+                        required property int index
+                        width: regionsList.width
+                        Text { text: modelData.source; color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: 11; Layout.preferredWidth: 78 }
+                        ComboBox {
+                            id: rolePicker
+                            model: root.semanticRoles
+                            currentIndex: Math.max(0, root.semanticRoles.indexOf(modelData.role))
+                            Layout.fillWidth: true
+                            onActivated: studioBridge.setRecolorRole(regionRow.index, currentText)
+                        }
+                    }
+                }
+                SecondaryButton { text: "Preview recolor"; enabled: studioBridge.recolorTemplateName !== "" && themePicker.currentText !== ""; Layout.fillWidth: true; onClicked: studioBridge.previewRecolor(themePicker.currentText) }
+                PrimaryButton { text: "Bind recolored to theme"; enabled: studioBridge.recolorTemplateName !== "" && themePicker.currentText !== ""; Layout.fillWidth: true; onClicked: studioBridge.bindRecolorToTheme(themePicker.currentText) }
 
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.border }
                 Text { text: "Library"; color: Theme.textSecondary; font.family: Theme.fontFamily; font.pixelSize: 12 }
