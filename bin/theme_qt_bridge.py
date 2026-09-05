@@ -135,7 +135,13 @@ class ThemeStudioBridge(QObject):
             self._set_status("No themes found in ~/.config/hypr/themes")
 
     def _preview(self, data: dict[str, Any], reason: str) -> None:
-        theme_runtime.preview_theme(data, reason)
+        try:
+            theme_runtime.preview_theme(data, reason)
+            self._set_status(f"Live preview: {reason}")
+        except Exception as exc:
+            # Keep the draft/undo stack intact and make the problem visible in
+            # the app instead of letting a Qt slot fail silently.
+            self._set_status(f"Live preview failed: {exc}")
 
     def _restore(self, _editor_theme_name: str) -> None:
         if self._restore_name:

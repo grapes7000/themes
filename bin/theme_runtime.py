@@ -32,6 +32,20 @@ LEGACY_PREVIEW_NAME = "_theme_studio_preview"
 def active_theme() -> str | None:
     try:
         value = ACTIVE_FILE.read_text(encoding="utf-8").strip()
+        if value != PREVIEW_NAME:
+            return value or None
+        # A killed/failed preview used to leave the temporary name in .active.
+        # Recovery records retain the theme the preview was editing, so return
+        # that durable name until the next successful apply repairs the marker.
+        recovery = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "theme-studio" / "recovery" / f"{PREVIEW_NAME}.json"
+        try:
+            payload = json.loads(recovery.read_text(encoding="utf-8"))
+            original = payload.get("original", {})
+            candidate = str(original.get("name") or payload.get("theme_name") or "")
+            if candidate and candidate != PREVIEW_NAME and (THEME_DIR / f"{safe_theme_name(candidate)}.json").is_file():
+                return safe_theme_name(candidate)
+        except (OSError, ValueError, AttributeError):
+            pass
         return value or None
     except OSError:
         return None
@@ -90,7 +104,7 @@ def noctalia_command() -> list[str] | None:
     if found:
         return [found]
     sibling = Path(__file__).resolve().with_name("theme-noctalia")
-    if sibling.exists():
+    if sibling.is_file() and os.access(sibling, os.X_OK):
         return [str(sibling)]
     return None
 
@@ -377,7 +391,10 @@ def _sync_noctalia(name: str) -> tuple[bool, str]:
     command = noctalia_command()
     if not command:
         return False, ""
-    proc = subprocess.run(command + ["apply", name], text=True, capture_output=True)
+    try:
+        proc = subprocess.run(command + ["apply", name], text=True, capture_output=True)
+    except OSError as exc:
+        return False, f"Noctalia sync skipped: {exc}"
     message = (proc.stdout or proc.stderr or "").strip()
     return proc.returncode == 0, message
 
@@ -433,8 +450,14 @@ def apply_theme(name: str, *, components: list[str] | None = None) -> dict[str, 
 
 
 def preview_theme(data: dict[str, Any], reason: str = "Preview") -> dict[str, Any]:
+    previous = active_theme()
     write_preview(data)
     result = apply_theme(PREVIEW_NAME)
+    # Preview data must never become the durable active-theme choice.  This is
+    # particularly important when a later desktop consumer fails mid-preview.
+    if previous and previous != PREVIEW_NAME:
+        ACTIVE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ACTIVE_FILE.write_text(previous + "\n", encoding="utf-8")
     result["reason"] = reason
     return result
 
