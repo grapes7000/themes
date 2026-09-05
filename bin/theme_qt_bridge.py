@@ -417,7 +417,15 @@ class ThemeStudioBridge(QObject):
         if not self._wallpapers:
             return
         self._selected_wallpaper = max(0, min(index, len(self._wallpapers) - 1))
+        # A recolor preview belongs to a particular source image.  Do not leave
+        # it displayed after the user moves to a different wallpaper.
+        self._template_name = ""
+        self._regions = []
+        self._recolor_preview_url = ""
+        self._recolor_preview_theme = ""
         self.selectedWallpaperChanged.emit()
+        self.recolorChanged.emit()
+        self._set_status(f"Selected {self.selectedWallpaperName}")
 
     def _selected_wallpaper_path(self) -> Path | None:
         if not (0 <= self._selected_wallpaper < len(self._wallpapers)):
@@ -519,7 +527,10 @@ class ThemeStudioBridge(QObject):
             return
         name = re.sub(r"[^a-z0-9_-]+", "-", path.stem.lower()).strip("-_") or "wallpaper"
         try:
-            proc = self._wallgen("semantic", "import", str(path), "--name", name, "--yes")
+            args = ["semantic", "import", str(path), "--name", name, "--yes"]
+            if self.themeName:
+                args.extend(("--palette", self.themeName))
+            proc = self._wallgen(*args)
             if proc.returncode:
                 self._set_status((proc.stderr or proc.stdout or "wallgen import failed").strip())
                 return

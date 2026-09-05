@@ -92,7 +92,7 @@ Item {
                 PrimaryButton { text: "Apply now"; enabled: studioBridge.selectedWallpaperUrl !== ""; Layout.fillWidth: true; onClicked: studioBridge.applySelectedWallpaper() }
 
                 Text { text: "Bind selected image to"; color: Theme.textSecondary; font.family: Theme.fontFamily; font.pixelSize: 12 }
-                ComboBox {
+                ThemedComboBox {
                     id: themePicker
                     model: root.themeModel
                     Layout.fillWidth: true
@@ -117,7 +117,7 @@ Item {
                         required property int index
                         width: regionsList.width
                         Text { text: modelData.source; color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: 11; Layout.preferredWidth: 78 }
-                        ComboBox {
+                        ThemedComboBox {
                             id: rolePicker
                             model: root.semanticRoles
                             currentIndex: Math.max(0, root.semanticRoles.indexOf(modelData.role))
@@ -139,12 +139,14 @@ Item {
                     spacing: 6
                     model: root.wallpaperModel
                     delegate: Rectangle {
+                        id: wallpaperRow
                         required property var modelData
+                        required property int index
                         width: wallpaperList.width
                         height: 46
                         radius: Theme.radiusSmall
-                        color: index === studioBridge.selectedWallpaperIndex ? Theme.accentSoft : Theme.bgElevated
-                        border.color: index === studioBridge.selectedWallpaperIndex ? Theme.accent : Theme.border
+                        color: wallpaperRow.index === studioBridge.selectedWallpaperIndex ? Theme.accentSoft : Theme.bgElevated
+                        border.color: wallpaperRow.index === studioBridge.selectedWallpaperIndex ? Theme.accent : Theme.border
                         RowLayout {
                             anchors.fill: parent
                             anchors.leftMargin: 8
@@ -152,7 +154,7 @@ Item {
                             Image { source: modelData.url; Layout.preferredWidth: 48; Layout.preferredHeight: 32; fillMode: Image.PreserveAspectCrop; asynchronous: true }
                             Text { text: modelData.name; color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
                         }
-                        MouseArea { anchors.fill: parent; onClicked: studioBridge.selectWallpaper(index) }
+                        MouseArea { anchors.fill: parent; onClicked: studioBridge.selectWallpaper(wallpaperRow.index) }
                     }
                 }
             }
