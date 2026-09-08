@@ -11,6 +11,7 @@ import sys
 import tempfile
 
 import theme_runtime
+import theme_ui
 from theme_schema import validation_summary, validate_theme
 from theme_starship import (
     STYLE_DESCRIPTIONS,
@@ -26,9 +27,12 @@ def usage() -> str:
     return """theme — desktop theme studio
 
 Interactive:
-  theme                     Open Theme Studio
-  theme studio              Open Theme Studio
-  theme edit [name]         Open a theme in Theme Studio
+  theme                     Open Qt Theme Studio (TUI fallback)
+  theme studio              Open Qt Theme Studio (TUI fallback)
+  theme edit [name]         Open a theme in Qt Theme Studio
+  theme qt [name]           Require the Qt frontend
+  theme tui [name]          Open the terminal frontend
+  theme qt-install          Install the optional PySide6 runtime
 
 Compatible commands:
   theme <name>              Apply a theme and Studio component overrides
@@ -39,6 +43,7 @@ Compatible commands:
   theme homepage ...        Existing homepage commands
   theme font ...            Existing font commands
   theme wallpaper ...       Semantic wallpaper template commands
+  theme ui ...              Application UI-style profile commands
 
 Starship layouts:
   theme starship                     Regenerate the active Starship layout
@@ -342,7 +347,7 @@ def _enable_live_preview_by_default() -> None:
     theme_editor.ThemeEditor.from_data = classmethod(from_data_with_preview)
 
 
-def launch(name: str | None = None) -> int:
+def launch_tui(name: str | None = None) -> int:
     if name:
         os.environ["THEME_STUDIO_THEME"] = name
     try:
@@ -356,6 +361,67 @@ def launch(name: str | None = None) -> int:
         print(f"theme: Theme Studio could not start: {exc}", file=sys.stderr)
         print("Falling back to the classic picker.", file=sys.stderr)
         return run_legacy([])
+
+
+def _python_has_pyside(python: str) -> bool:
+    try:
+        proc = subprocess.run(
+            [python, "-c", "import PySide6"], stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=8,
+        )
+        return proc.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _qt_python() -> str | None:
+    explicit = os.environ.get("THEME_STUDIO_QT_PYTHON")
+    if explicit and _python_has_pyside(explicit):
+        return explicit
+    venv = Path(os.environ.get(
+        "THEME_STUDIO_QT_VENV", Path.home() / ".local/share/theme-studio/qt-venv"
+    )) / "bin/python"
+    if venv.exists() and _python_has_pyside(str(venv)):
+        return str(venv)
+    return sys.executable if _python_has_pyside(sys.executable) else None
+
+
+def launch_qt(name: str | None = None) -> int | None:
+    python = _qt_python()
+    if not python:
+        return None
+    app = Path(__file__).resolve().with_name("theme_qt_app.py")
+    if not app.exists():
+        print("theme: Qt frontend files are missing; re-run install.sh.", file=sys.stderr)
+        return 2
+    command = [python, str(app)]
+    if name:
+        command += ["--theme", name]
+    try:
+        return subprocess.call(command)
+    except KeyboardInterrupt:
+        return 130
+
+
+def launch(name: str | None = None, *, frontend: str = "auto") -> int:
+    if frontend != "tui":
+        code = launch_qt(name)
+        if code is not None:
+            if code == 0 or frontend == "qt":
+                return code
+            print(f"theme: Qt frontend exited with status {code}; using TUI fallback.", file=sys.stderr)
+        elif frontend == "qt":
+            print("theme: PySide6 is not available. Run: theme qt-install", file=sys.stderr)
+            return 127
+    return launch_tui(name)
+
+
+def install_qt_runtime() -> int:
+    helper = Path(__file__).resolve().with_name("theme-qt-install")
+    if not helper.exists():
+        print("theme qt-install: helper missing; re-run install.sh.", file=sys.stderr)
+        return 127
+    return subprocess.call([str(helper)])
 
 
 def validate(name: str | None) -> int:
@@ -377,6 +443,23 @@ def validate(name: str | None) -> int:
     return 1 if errors else 0
 
 
+def _active_theme_data() -> tuple[str | None, dict | None]:
+    name = theme_runtime.active_theme()
+    if not name:
+        return None, None
+    try:
+        return name, theme_runtime.load_theme(name)
+    except Exception:
+        return name, None
+
+
+def _publish_ui_style(name: str, theme: dict) -> None:
+    try:
+        theme_ui.publish(theme, name)
+    except Exception as exc:
+        print(f"theme: UI-style warning: {exc}", file=sys.stderr)
+
+
 def main() -> int:
     # Establish the managed Starship path as a symlink before any full theme
     # apply. The legacy generator can then recolor ~/.config/starship.toml and
@@ -390,10 +473,18 @@ def main() -> int:
     if args[0] in ("-h", "--help", "help"):
         print(usage())
         return 0
-    if args[0] in ("studio", "recover"):
+    if args[0] == "studio":
         return launch()
+    if args[0] == "recover":
+        return launch(frontend="tui")
     if args[0] == "edit":
         return launch(args[1] if len(args) > 1 else theme_runtime.active_theme())
+    if args[0] == "qt":
+        return launch(args[1] if len(args) > 1 else theme_runtime.active_theme(), frontend="qt")
+    if args[0] == "tui":
+        return launch(args[1] if len(args) > 1 else theme_runtime.active_theme(), frontend="tui")
+    if args[0] == "qt-install":
+        return install_qt_runtime()
     if args[0] == "validate":
         return validate(args[1] if len(args) > 1 else None)
     if args[0] == "legacy":
@@ -402,6 +493,13 @@ def main() -> int:
         return wallpaper(args[1:])
     if args[0] == "starship":
         return starship(args[1:])
+    if args[0] == "ui":
+        name, theme = _active_theme_data()
+        try:
+            return theme_ui.command(args[1:], theme, name)
+        except Exception as exc:
+            print(f"theme ui: {exc}", file=sys.stderr)
+            return 2
 
     passthrough = {"shape", "texture", "anim", "effects", "homepage", "font", "-l", "--list"}
     if args[0] in passthrough or args[0].startswith("-"):
@@ -425,6 +523,7 @@ def main() -> int:
         return 1
     if result.get("legacy_message"):
         print(result["legacy_message"])
+    _publish_ui_style(args[0], theme_runtime.load_theme(args[0]))
     print(f"Theme Studio overrides applied: {args[0]}")
     return 0
 

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "legacy",
+  "description": "Roomier rounded application style.",
+  "metrics": {"grid": 4, "spacing_xs": 4, "spacing_sm": 8, "spacing_md": 12, "spacing_lg": 18, "page_padding": 32, "section_gap": 28, "control_height": 38, "sidebar_width": 220, "radius_control": 9, "radius_surface": 14, "border_width": 1, "font_body": 14, "font_title": 24},
+  "patterns": {"surface": "card", "section": "card", "list_row": "card", "selection": "filled", "button": "filled", "field": "filled-outlined", "dialog": "rounded-card", "status": "semantic-direct", "shadow": "soft"},
+  "rules": {"allow_local_spacing": true, "allow_local_radius": true, "allow_local_font_size": true, "allow_local_border_width": false, "allow_nested_cards": true}
+}

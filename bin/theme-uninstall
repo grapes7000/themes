@@ -23,7 +23,7 @@ def strip_line(p, needle):
     open(p, "w").writelines(lines); print("  cleaned", p)
 
 # generated files
-for f in ["hypr/generated/theme.conf", "waybar/generated/theme.css",
+for f in ["hypr/generated/theme.conf",
           "kitty/generated/theme.conf", "nvim/lua/generated_theme.lua",
           "wofi/colors.css", "rofi/theme-engine.rasi", "oomox/colors/theme-engine"]:
     rm(os.path.join(CFG, f))

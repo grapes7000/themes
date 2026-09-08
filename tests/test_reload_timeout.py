@@ -34,3 +34,15 @@ def test_reload_survives_a_hanging_consumer():
     for call in mock_run.call_args_list:
         assert "timeout" in call.kwargs
         assert call.kwargs["timeout"] is not None
+
+
+def test_reload_skips_dunstctl_when_dunst_is_not_running():
+    completed = subprocess.CompletedProcess(["pgrep", "-x", "dunst"], 1)
+    with patch.object(theme.subprocess, "run", return_value=completed) as mock_run, \
+         patch.object(theme.subprocess, "Popen"), \
+         patch.dict(theme.os.environ, {}, clear=False):
+        theme.os.environ.pop("HYPRLAND_INSTANCE_SIGNATURE", None)
+        theme.reload(targets={})
+
+    commands = [call.args[0] for call in mock_run.call_args_list]
+    assert ["dunstctl", "reload"] not in commands

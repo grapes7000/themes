@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 *.bak-*
+
+# Generated per-machine by install.sh into ~/.config/theme-engine/.
+# Keep targets.conf.example as the tracked reference copy.
+targets.conf

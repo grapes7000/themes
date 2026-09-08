@@ -41,7 +41,7 @@ theme y2k
 Theme Studio and the normal named-theme command both generate
 `~/.config/noctalia/palettes/theme-engine-active.json`, select it as Noctalia's
 custom palette, and apply the same source theme to the enabled deep-theme
-targets. Waybar output is skipped when the `waybar` target is disabled.
+targets.
 
 ## Undo
 
@@ -61,5 +61,5 @@ Edit:
 ~/.config/theme-engine/targets.conf
 ```
 
-Avoid enabling Waybar, Eww homepage, Dunst, or Hyprlock while Noctalia owns
+Avoid enabling the Eww homepage, Dunst, or Hyprlock while Noctalia owns
 those shell surfaces.
