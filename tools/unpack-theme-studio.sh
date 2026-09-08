@@ -47,4 +47,49 @@ if old not in text:
 path.write_text(text.replace(old, new, 1), encoding="utf-8")
 PY
 
+# Do not let a missing notification daemon block every theme switch. dunstctl
+# can wait on D-Bus for many seconds when Dunst is not running; also bound all
+# component reload hooks so a misbehaving desktop consumer cannot hang Studio.
+python3 - "$DEST/theme_components.py" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = '''    def run(*cmd: str) -> None:
+        try:
+            subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except FileNotFoundError:
+            pass
+'''
+new = '''    def run(*cmd: str) -> None:
+        try:
+            subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=2)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+'''
+if old not in text:
+    raise SystemExit("Theme Studio compatibility patch failed: reload helper was not found")
+text = text.replace(old, new, 1)
+old = '''    if "notifications" in names:
+        run("dunstctl", "reload")
+'''
+new = '''    if "notifications" in names:
+        try:
+            dunst_running = subprocess.run(
+                ["pgrep", "-x", "dunst"], check=False,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=1,
+            ).returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            dunst_running = False
+        if dunst_running:
+            run("dunstctl", "reload")
+'''
+if old not in text:
+    raise SystemExit("Theme Studio compatibility patch failed: Dunst reload hook was not found")
+path.write_text(text.replace(old, new, 1), encoding="utf-8")
+PY
+
 echo "Theme Studio source unpacked to: $DEST"
