@@ -53,7 +53,7 @@ bash "$REPO/tools/unpack-theme-studio.sh" "$STUDIO_TMP" >/dev/null
   for name in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image theme-noctalia theme-noctalia-uninstall; do
     echo "$HOME/.local/bin/$name"
   done
-  for name in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py theme_schema.py theme_preview.py theme_waybar.py theme_components.py theme_tui_widgets.py theme_tui.py; do
+  for name in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py theme_schema.py theme_preview.py theme_components.py theme_tui_widgets.py theme_tui.py; do
     echo "$HOME/.local/bin/$name"
   done
   echo "$HOME/.config/hypr/themes"
@@ -120,12 +120,12 @@ install -m755 "$REPO/bin/theme-noctalia-uninstall" "$HOME/.local/bin/theme-nocta
 for name in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py; do
   install -m644 "$REPO/bin/$name" "$HOME/.local/bin/$name"
 done
-for name in theme_schema.py theme_preview.py theme_waybar.py theme_components.py theme_tui_widgets.py theme_tui.py; do
+for name in theme_schema.py theme_preview.py theme_components.py theme_tui_widgets.py theme_tui.py; do
   install -m644 "$STUDIO_TMP/$name" "$HOME/.local/bin/$name"
 done
 install -m644 "$STUDIO_TMP/THEME-STUDIO.md" "$HOME/.local/share/doc/theme-studio/README.md"
 
-# Theme Engine owns deep app/compositor theming. No Waybar/Eww/Dunst/Hyprlock
+# Theme Engine owns deep app/compositor theming. No Eww/Dunst/Hyprlock
 # targets are enabled because Noctalia owns those shell surfaces.
 {
   echo '# Noctalia-safe Theme Engine targets. Restorable with theme-noctalia-uninstall.'

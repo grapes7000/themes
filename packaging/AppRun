@@ -23,7 +23,6 @@ if [ ! -e "$ENGINE_ROOT/targets.conf" ]; then
         echo "# Created on first Theme Engine AppImage launch."
         echo "# Only detected apps are enabled; edit this file at any time."
         command -v hyprctl >/dev/null 2>&1 && echo hypr
-        command -v waybar >/dev/null 2>&1 && echo waybar
         command -v kitty >/dev/null 2>&1 && echo kitty
         command -v starship >/dev/null 2>&1 && echo starship
         command -v nvim >/dev/null 2>&1 && echo nvim

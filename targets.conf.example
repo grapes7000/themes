@@ -3,7 +3,6 @@
 # writes sensible defaults instead. This is now just a manual reference/
 # kitchen-sink template (Hyprland-flavored) if you want to hand-roll one.
 hypr
-waybar
 kitty
 starship
 nvim

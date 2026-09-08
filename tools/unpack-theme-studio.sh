@@ -18,7 +18,7 @@ if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
 fi
 
 tar -xzf "$TMP" -C "$DEST"
-for required in theme_schema.py theme_preview.py theme_waybar.py theme_components.py theme_tui_widgets.py theme_tui.py tests/test_theme_studio.py THEME-STUDIO.md Theme-Studio-TUI-Design-Plan.md; do
+for required in theme_schema.py theme_preview.py theme_components.py theme_tui_widgets.py theme_tui.py tests/test_theme_studio.py THEME-STUDIO.md Theme-Studio-TUI-Design-Plan.md; do
   [[ -e "$DEST/$required" ]] || { echo "Missing extracted file: $required" >&2; exit 1; }
 done
 

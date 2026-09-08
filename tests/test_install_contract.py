@@ -27,5 +27,5 @@ def test_terminal_mode_contains_only_portable_targets() -> None:
     terminal_function = INSTALLER.split("emit_terminal_targets() {", 1)[1].split("}\n", 1)[0]
     for target in ("kitty", "starship", "nvim", "zsh"):
         assert target in terminal_function
-    for target in ("hypr", "waybar", "wallpaper", "wofi", "rofi", "dunst", "hyprlock", "homepage"):
+    for target in ("hypr", "wallpaper", "wofi", "rofi", "dunst", "hyprlock", "homepage"):
         assert target not in terminal_function
