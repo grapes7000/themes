@@ -56,6 +56,8 @@ STUDIO_TMP="$(mktemp -d)"
 trap 'rm -rf "$STUDIO_TMP"' EXIT
 bash "$REPO/tools/unpack-theme-studio.sh" "$STUDIO_TMP" >/dev/null
 
+# Install the canonical app generators alongside their shared Pywalfox exporter.
+# Keep these outside the older Studio bundle so upgrades receive palette fixes.
 install -m755 "$REPO/bin/theme" "$HOME/.local/bin/theme-legacy"
 install -m755 "$REPO/bin/theme-studio" "$HOME/.local/bin/theme"
 for t in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image theme-qt-install; do
@@ -158,6 +160,7 @@ write_targets_conf() {
         esac
         echo "# obsidian=~/Documents/Obsidian Vault"
         echo "# firefox"
+        echo "# vscode"
     } > "$out"
 }
 

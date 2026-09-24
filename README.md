@@ -70,6 +70,24 @@ generators are pure Python 3 + Pillow — no other deps.
 
 Make sure `~/.local/bin` is on your PATH (`fish_add_path -g ~/.local/bin` for fish).
 
+### Firefox and VSCodium palettes
+
+Enable `firefox` and `vscode` in `~/.config/theme-engine/targets.conf`, then
+run `theme <name>`. Re-running `./install.sh` upgrades these generators and
+the shared `theme-pywalfox` exporter while preserving your enabled targets.
+
+Firefox uses Pywalfox for live colors when its native helper is installed;
+the browser extension must also be enabled and connected. Every switch writes
+a complete color cache, including the wallpaper path. Restart Firefox once
+after upgrading to unload older generated toolbar CSS. Without the native
+helper, the generator uses static toolbar CSS and requires a browser restart.
+Phoenix users must enable native messaging for Pywalfox to connect.
+
+The VSCodium target selects the built-in dark or light base and applies the
+chosen palette to UI surfaces, terminal colors, and syntax. It preserves
+unrelated settings and custom color keys; explicit workspace or token rules
+can still override generated colors.
+
 ### Curated wallpapers (optional)
 
 28 of the 53 themes ship a hand-made wallpaper in `wallpapers/`, which

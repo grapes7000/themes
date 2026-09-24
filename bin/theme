@@ -811,7 +811,7 @@ body {{
     write(ap, json.dumps(data, indent=2))
 
 
-def gen_firefox(r, dark):
+def gen_firefox(r, dark, name=None):
     """Theme the toolbar (userChrome.css) of every Firefox-family browser found,
     and emit pywal colors for pywalfox (chrome + pages, live via `pywalfox
     update` in reload()). Chrome-only via userChrome needs a restart."""
@@ -827,6 +827,10 @@ def gen_firefox(r, dark):
 .tabbrowser-tab {{ color: {r['text_dim']} !important; }}
 .tabbrowser-tab[selected] {{ color: {r['accent']} !important; }}
 '''
+    # Pywalfox owns live browser colors; static CSS would retain the previous
+    # palette in open windows and override extension updates.
+    if shutil.which("pywalfox"):
+        css = "/* Theme colors managed live by Pywalfox. */\n"
     # every Firefox-family profile root -> theme whichever exist
     roots = [".mozilla/firefox", ".librewolf", ".zen", ".mullvad-browser",
              ".floorp", ".waterfox", ".mozilla/icecat"]
@@ -838,18 +842,14 @@ def gen_firefox(r, dark):
             write(os.path.join(prof, "chrome", "userChrome.css"), css)
             ensure_import(os.path.join(prof, "user.js"),
                 'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);')
-    # pywal palette for the Pywalfox add-on (chrome + web pages)
-    ansi = ["ansi_black", "ansi_red", "ansi_green", "ansi_yellow", "ansi_blue",
-            "ansi_magenta", "ansi_cyan", "ansi_white", "ansi_br_black", "ansi_br_red",
-            "ansi_br_green", "ansi_br_yellow", "ansi_br_blue", "ansi_br_magenta",
-            "ansi_br_cyan", "ansi_br_white"]
-    walcolors = {
-        "special": {"background": r["bg"], "foreground": r["text"],
-                    "cursor": r.get("cursor", r["accent"])},
-        "colors": {f"color{i}": r.get(k, r["text"]) for i, k in enumerate(ansi)},
-    }
-    write(os.path.join(HOME, ".cache", "wal", "colors.json"),
-          json.dumps(walcolors, indent=2))
+    # Use the same validated payload and semantic slots as the standalone exporter.
+    import runpy
+    from pathlib import Path
+    exporter = runpy.run_path(str(Path(__file__).resolve().with_name("theme-pywalfox")))
+    name = name or active() or "unknown"
+    payload = exporter["build_payload"](
+        name, {"roles": r, "dark": dark}, exporter["resolve_wallpaper"](name))
+    exporter["atomic_write_json"](exporter["DEFAULT_OUTPUT"], payload)
 
 
 def gen_alacritty(r, s):
@@ -905,7 +905,10 @@ def gen_vscode(r, dark):
     except (OSError, ValueError):
         return  # don't risk clobbering a settings file we can't parse
     backup_once(path)
-    data["workbench.colorCustomizations"] = {
+    # Stop inheriting unoverridden UI and syntax colors from a previous theme.
+    data["workbench.colorTheme"] = "Default Dark Modern" if dark else "Default Light Modern"
+    colors = data.setdefault("workbench.colorCustomizations", {})
+    colors.update({
         "editor.background": r["bg"], "editor.foreground": r["text"],
         "editorCursor.foreground": r["accent"], "editor.selectionBackground": r["bg_alt"],
         "editorLineNumber.foreground": r["text_dim"],
@@ -918,7 +921,36 @@ def gen_vscode(r, dark):
         "tab.inactiveBackground": r["bg_alt"], "tab.inactiveForeground": r["text_dim"],
         "focusBorder": r["accent"], "terminal.background": r["bg"],
         "terminal.foreground": r["text"],
-    }
+    })
+    for key in ("editorGroupHeader.tabs.background", "panel.background", "panelTitle.activeBackground",
+                "sideBarSectionHeader.background", "sideBarTitle.background", "titleBar.inactiveBackground",
+                "statusBar.noFolderBackground", "statusBar.debuggingBackground", "tab.unfocusedActiveBackground",
+                "dropdown.background", "input.background", "menu.background", "editorWidget.background",
+                "editorSuggestWidget.background", "editorHoverWidget.background", "quickInput.background",
+                "notifications.background", "activityBar.inactiveBackground"):
+        colors[key] = r["bg_alt"]
+    for key in ("foreground", "descriptionForeground", "titleBar.inactiveForeground", "input.foreground",
+                "dropdown.foreground", "menu.foreground", "panelTitle.activeForeground",
+                "statusBar.debuggingForeground", "statusBar.noFolderForeground", "notifications.foreground"):
+        colors[key] = r["text"]
+    for key in ("button.background", "badge.background", "progressBar.background",
+                "activityBarBadge.background", "list.activeSelectionBackground"):
+        colors[key] = r["accent"]
+    for key in ("button.foreground", "badge.foreground", "activityBarBadge.foreground",
+                "list.activeSelectionForeground"):
+        colors[key] = r["bg"]
+    for key in ("panel.border", "sideBar.border", "editorGroup.border", "tab.border", "input.border"):
+        colors[key] = r.get("border_normal", r["bg_alt"])
+    for suffix, role in zip(
+            ("Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White"),
+            ("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white")):
+        colors["terminal.ansi" + suffix] = r.get("ansi_" + role, r["text"])
+        colors["terminal.ansiBright" + suffix] = r.get("ansi_br_" + role, r["text"])
+    tokens = data.setdefault("editor.tokenColorCustomizations", {})
+    tokens.update({"comments": r["text_dim"], "strings": r.get("ansi_green", r["accent2"]),
+                   "keywords": r.get("ansi_red", r["accent"]), "numbers": r.get("ansi_magenta", r["accent2"]),
+                   "types": r.get("ansi_yellow", r["accent"]), "functions": r["accent2"],
+                   "variables": r["text"]})
     write(path, json.dumps(data, indent=2))
 
 
@@ -1246,7 +1278,7 @@ def apply(name, announce=True, targets=None):
     if "hyprlock" in tg:  gen_hyprlock(r, s)
     if "homepage" in tg:  gen_homepage(r, s, name, texture_name)
     if "obsidian" in tg:  gen_obsidian(r, dark, tg["obsidian"])
-    if "firefox" in tg:   gen_firefox(r, dark)
+    if "firefox" in tg:   gen_firefox(r, dark, name)
     if "kde" in tg:       gen_kde(r, s, dark)
     if "oomox" in tg:     gen_oomox(r, s, dark)
     if "gtk" in tg:       gen_gtk(r, dark)
