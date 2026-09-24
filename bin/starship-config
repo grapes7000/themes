@@ -119,6 +119,8 @@ def preview_lines(values):
         " 10:42 AM" if values["time_enabled"] else "",
     ) if part)
 
+    if style == "powerline":
+        return f"  user  {workspace}  {git_simple}   3.14   docker   10:42 ", "", ""
     if style == "minimal":
         return f"{workspace}  {values['branch_icon']} main", telemetry, values["success_symbol"]
     if style == "hud":

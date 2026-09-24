@@ -44,6 +44,21 @@ def test_every_style_is_valid_toml():
         assert f"STARSHIP_STYLE = {style}" in text
 
 
+def test_powerline_matches_newstarship_segment_geometry():
+    parsed = tomllib.loads(render("powerline"))
+    fmt = parsed["format"]
+    assert fmt.startswith("[](orange)$os$username[](bg:warn fg:orange)$directory")
+    assert "[](fg:warn bg:aqua)$git_branch$git_status" in fmt
+    assert "$c$cpp$rust$golang$nodejs$bun$php$java$kotlin$haskell$python" in fmt
+    assert "[](fg:blue bg:bg3)$docker_context$conda$pixi" in fmt
+    assert "[](fg:bg3 bg:bg1)$time[ ](fg:bg1)$line_break$character" in fmt
+    assert parsed["directory"]["truncation_length"] == 3
+    assert parsed["username"]["show_always"] is True
+    palette = parsed["palettes"]["theme"]
+    assert palette["orange"] == COLORS["accent2"]
+    assert palette["aqua"] == COLORS["ansi_green"]
+
+
 def test_workspace_is_the_original_powerline_prompt():
     parsed = tomllib.loads(render("workspace"))
     fmt = parsed["format"]

@@ -65,9 +65,10 @@ _G = {
     "cfg_ico": chr(0xF0493),
 }
 
-STYLE_NAMES = ("workspace", "minimal", "hud", "muted", "neon", "operator")
+STYLE_NAMES = ("workspace", "powerline", "minimal", "hud", "muted", "neon", "operator")
 STYLE_DESCRIPTIONS = {
     "workspace": "the original filled Powerline prompt, unchanged",
+    "powerline": "continuous segmented Powerline matching NEWSTARSHIP.toml geometry",
     "minimal": "quiet two-line directory + Git prompt",
     "hud": "dashboard with dynamic fill and right-side telemetry",
     "muted": "workspace-like Powerline using mostly neutral semantic colors",
@@ -132,6 +133,7 @@ DEFAULT = {
 
 STYLE_PRESETS = {
     "workspace": {"os_enabled": True, "dev_enabled": True, "container_enabled": True, "cloud_enabled": True, "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True, "battery_enabled": True, "memory_enabled": True, "time_enabled": True},
+    "powerline": {"os_enabled": True, "dev_enabled": True, "container_enabled": True, "cloud_enabled": False, "duration_enabled": False, "cmd_status_enabled": False, "jobs_enabled": False, "battery_enabled": False, "memory_enabled": False, "time_enabled": True},
     "minimal": {"os_enabled": False, "dev_enabled": False, "container_enabled": False, "cloud_enabled": False, "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": False, "battery_enabled": False, "memory_enabled": False, "time_enabled": False},
     "hud": {"os_enabled": True, "dev_enabled": True, "container_enabled": False, "cloud_enabled": False, "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True, "battery_enabled": True, "memory_enabled": False, "time_enabled": True},
     "muted": {"os_enabled": True, "dev_enabled": True, "container_enabled": True, "cloud_enabled": False, "duration_enabled": True, "cmd_status_enabled": True, "jobs_enabled": True, "battery_enabled": True, "memory_enabled": False, "time_enabled": True},
@@ -225,8 +227,15 @@ def _palette(colors):
     return {
         "bg": bg,
         "surface": colors.get("bg_alt", bg),
+        "bg1": colors.get("border_normal", colors.get("bg_alt", bg)),
+        "bg3": colors.get("text_dim", colors.get("bg_alt", bg)),
         "fg": text,
         "muted": colors.get("text_dim", text),
+        "blue": colors.get("ansi_blue", accent2),
+        "blue_bright": colors.get("ansi_br_blue", colors.get("ansi_blue", accent2)),
+        "aqua": colors.get("ansi_cyan", colors.get("ansi_green", accent2)),
+        "purple": colors.get("ansi_magenta", accent),
+        "orange": colors.get("ansi_orange", accent2),
         "accent": accent,
         "accent2": accent2,
         "urgent": colors.get("urgent", accent),
@@ -276,8 +285,15 @@ def _palette_block(p):
 [palettes.theme]
 bg = "{p['bg']}"
 surface = "{p['surface']}"
+bg1 = "{p['bg1']}"
+bg3 = "{p['bg3']}"
 fg = "{p['fg']}"
 muted = "{p['muted']}"
+blue = "{p['blue']}"
+blue_bright = "{p['blue_bright']}"
+aqua = "{p['aqua']}"
+purple = "{p['purple']}"
+orange = "{p['orange']}"
 accent = "{p['accent']}"
 accent2 = "{p['accent2']}"
 urgent = "{p['urgent']}"
@@ -559,6 +575,189 @@ vimcmd_visual_symbol = "[{prefix}{p['vim_symbol']}](bold fg:accent2)"
 '''
 
 
+def _powerline_os_config():
+    return """
+[os]
+disabled = false
+style = "bg:orange fg:fg"
+
+[os.symbols]
+Windows = "󰍲"
+Ubuntu = "󰕈"
+SUSE = ""
+Raspbian = "󰐿"
+Mint = "󰣭"
+Macos = "󰀵"
+Manjaro = ""
+Linux = "󰌽"
+Gentoo = "󰣨"
+Fedora = "󰣛"
+Alpine = ""
+Amazon = ""
+Android = ""
+AOSC = ""
+Arch = "󰣇"
+Artix = "󰣇"
+EndeavourOS = ""
+CentOS = ""
+Debian = "󰣚"
+Redhat = "󱄛"
+RedHatEnterprise = "󱄛"
+Pop = ""
+
+[username]
+show_always = true
+style_user = "bg:orange fg:fg"
+style_root = "bg:orange fg:fg"
+format = "[ $user ]($style)"
+"""
+
+
+def _powerline_directory_config():
+    return """
+[directory]
+style = "fg:fg bg:warn"
+format = "[ $path ]($style)"
+truncation_length = 3
+truncation_symbol = "…/"
+
+[directory.substitutions]
+"Documents" = "󰈙 "
+"Downloads" = " "
+"Music" = "󰝚 "
+"Pictures" = " "
+"Developer" = "󰲋 "
+"""
+
+
+def _powerline_git_config(p):
+    return f"""
+[git_branch]
+disabled = {_bool(not p['branch_enabled'])}
+symbol = "{p['branch_icon']}"
+style = "bg:aqua"
+format = '[[ $symbol $branch ](fg:fg bg:aqua)]($style)'
+
+[git_status]
+disabled = {_bool(not p['status_enabled'])}
+style = "bg:aqua"
+format = '[[($all_status$ahead_behind )](fg:fg bg:aqua)]($style)'
+conflicted = "{p['status_conflicted']}${{count}} "
+ahead = "{p['status_ahead']}${{count}} "
+behind = "{p['status_behind']}${{count}} "
+diverged = "{p['status_diverged']}⇡${{ahead_count}}⇣${{behind_count}} "
+untracked = "{p['status_untracked']}${{count}} "
+stashed = "{p['status_stashed']}${{count}} "
+modified = "{p['status_modified']}${{count}} "
+staged = "{p['status_staged']}${{count}} "
+renamed = "{p['status_renamed']}${{count}} "
+deleted = "{p['status_deleted']}${{count}} "
+"""
+
+
+def _powerline_context_config():
+    rows = [
+        ("c", " ", "$version"),
+        ("cpp", " ", "$version"),
+        ("rust", "", "$version"),
+        ("golang", "", "$version"),
+        ("nodejs", "", "$version"),
+        ("bun", "", "$version"),
+        ("php", "", "$version"),
+        ("java", "", "$version"),
+        ("kotlin", "", "$version"),
+        ("haskell", "", "$version"),
+        ("python", "", "$version"),
+    ]
+    out = []
+    for name, symbol, value in rows:
+        out.append(
+            f"""
+[{name}]
+symbol = "{symbol}"
+style = "bg:blue"
+format = '[[ $symbol( {value}) ](fg:fg bg:blue)]($style)'
+"""
+        )
+    out.append(
+        """
+[docker_context]
+symbol = ""
+style = "bg:bg3"
+format = '[[ $symbol( $context) ](fg:blue_bright bg:bg3)]($style)'
+
+[conda]
+style = "bg:bg3"
+format = '[[ $symbol( $environment) ](fg:blue_bright bg:bg3)]($style)'
+ignore_base = true
+
+[pixi]
+style = "bg:bg3"
+format = '[[ $symbol( $version)( $environment) ](fg:fg bg:bg3)]($style)'
+"""
+    )
+    return "".join(out)
+
+
+def _powerline_time_config(p):
+    return f"""
+[time]
+disabled = {_bool(not p['time_enabled'])}
+time_format = "%R"
+style = "bg:bg1"
+format = '[[  $time ](fg:fg bg:bg1)]($style)'
+"""
+
+
+def _powerline_character_config(p):
+    return """
+[line_break]
+disabled = false
+
+[character]
+disabled = false
+success_symbol = '[](bold fg:success)'
+error_symbol = '[](bold fg:urgent)'
+vimcmd_symbol = '[](bold fg:success)'
+vimcmd_replace_one_symbol = '[](bold fg:purple)'
+vimcmd_replace_symbol = '[](bold fg:purple)'
+vimcmd_visual_symbol = '[](bold fg:warn)'
+"""
+
+
+def _render_powerline(p, palette):
+    return _header("powerline") + """
+format = \"\"\"
+[](orange)\\
+$os\\
+$username\\
+[](bg:warn fg:orange)\\
+$directory\\
+[](fg:warn bg:aqua)\\
+$git_branch\\
+$git_status\\
+[](fg:aqua bg:blue)\\
+$c\\
+$cpp\\
+$rust\\
+$golang\\
+$nodejs\\
+$bun\\
+$php\\
+$java\\
+$kotlin\\
+$haskell\\
+$python\\
+[](fg:blue bg:bg3)\\
+$docker_context\\
+$conda\\
+$pixi\\
+[](fg:bg3 bg:bg1)\\
+$time\\
+[ ](fg:bg1)\\
+$line_break$character\"\"\"
+""" + _palette_block(palette) + _powerline_os_config() + _powerline_directory_config() + _powerline_git_config(p) + _powerline_context_config() + _powerline_time_config(p) + _powerline_character_config(p)
+
 def _render_workspace(p, palette):
     git = ("$git_branch" if p["branch_enabled"] else "") + ("$git_state" if p["state_enabled"] else "") + ("$git_status" if p["status_enabled"] else "")
     git_custom = ""
@@ -716,6 +915,7 @@ def render(colors, settings=None):
     palette = _palette(colors)
     renderers = {
         "workspace": _render_workspace,
+        "powerline": _render_powerline,
         "minimal": _render_minimal,
         "hud": _render_hud,
         "muted": _render_muted,

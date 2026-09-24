@@ -5,7 +5,7 @@ command re-skins **Hyprland + kitty + starship + Neovim** at once — colors,
 blur, shadows, corner radius, gaps *and* a matching generated wallpaper — all
 from a single `theme.json` per theme.
 
-**36 themes included.** Each carries its own look-and-feel, not just colors:
+**37 themes included.** Each carries its own look-and-feel, not just colors:
 sharp themes get tight gaps and no blur; glassy themes get heavy blur and big
 radius; light themes get subtle shadows.
 
@@ -128,11 +128,11 @@ Wallpapers bind by filename, so `theme monolith-dark` picks up
 
 ---
 
-## The 36 themes
+## The 37 themes
 
 **Dark:** catppuccin_mocha · catppuccin_macchiato · catppuccin_frappe ·
 dracula · tokyonight · tokyonight-storm · everforest-dark · kanagawa ·
-kanagawa-wave · kanagawa-dragon · onedark · material · nord · gruvbox ·
+kanagawa-wave · kanagawa-dragon · onedark · material · nord · gruvbox · gruvbox-dark ·
 gruvbox-material · monokai · solarized-dark · rose-pine · rose-pine-moon ·
 ayu-dark · ayu-mirage · oxocarbon · hacker-pink · y2k
 
@@ -184,7 +184,8 @@ commands and background jobs also show compact Nerd Font indicators when active.
 Press `s` in Theme Studio (or run `starship-config` directly) to edit the shared
 prompt layout, path, Git, marker, and conditional-indicator settings. It saves one profile at
 `~/.config/theme-engine/starship.json`; every theme uses that profile with its
-own palette. The editor’s Save action regenerates only the active Starship
+own palette. For the continuous `NEWSTARSHIP.toml`-style segment chain, use
+`theme starship use powerline`. The editor’s Save action regenerates only the active Starship
 configuration. Hand-authored Starship configurations remain untouched.
 
 ---

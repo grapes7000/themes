@@ -8,6 +8,7 @@ The themes repo owns the Starship layout renderer. Every layout uses the active 
 theme starship list
 theme starship current
 theme starship use workspace
+theme starship use powerline
 theme starship use minimal
 theme starship use hud
 theme starship use muted
@@ -22,6 +23,10 @@ The style name may also be used directly, for example `theme starship muted`. `t
 ### workspace
 
 The original known-good two-line filled Powerline prompt is preserved as the default. Its visible module order and geometry match the pre-switcher renderer: OS Nerd Font symbol / identity → directory → Git branch/state/status → development context, with transparent status, duration, jobs, battery, and time on the right.
+
+### powerline
+
+A continuous segmented Powerline modeled directly on `NEWSTARSHIP.toml`: OS/user → directory → Git → language runtimes → container/environment → clock. Its geometry follows that reference, while its colors are mapped from the currently active desktop theme, so the same layout works with every palette. With `gruvbox-dark`, the segment colors correspond to the darker Gruvbox values used by `NEWSTARSHIP.toml`.
 
 ### minimal
 
