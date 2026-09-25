@@ -168,3 +168,18 @@ def test_old_style_names_migrate():
     assert starship.normalize_style("Rounded powerline") == "workspace"
     assert starship.normalize_style("Minimal status") == "minimal"
     assert starship.normalize_style("Focused development") == "muted"
+
+
+def test_powerline_uses_known_good_distro_glyphs():
+    parsed = tomllib.loads(render("powerline"))
+    symbols = parsed["os"]["symbols"]
+    assert symbols["Arch"] == ""
+    assert symbols["CachyOS"] == ""
+    assert symbols["Debian"] == ""
+    assert symbols["Fedora"] == ""
+    assert symbols["Ubuntu"] == ""
+    assert symbols["Mint"] == ""
+    assert symbols["Linux"] == ""
+    assert symbols["Macos"] == ""
+    assert symbols["Windows"] == ""
+    assert "󰣇" not in render("powerline")
