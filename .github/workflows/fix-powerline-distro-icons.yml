@@ -1,0 +1,116 @@
+name: Fix Powerline distro icons
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-powerline-distro-icons.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Patch Powerline distro symbols and tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('bin/theme_starship.py')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('def _powerline_os_config():')
+          end = text.index('\n\ndef _powerline_directory_config():', start)
+          replacement = '''def _powerline_os_config():
+              return f"""
+          [os]
+          disabled = false
+          style = "bg:orange fg:fg"
+
+          [os.symbols]
+          Windows = "{_G['os_windows']}"
+          Ubuntu = "{_G['os_ubuntu']}"
+          SUSE = ""
+          Raspbian = "󰐿"
+          Mint = "{_G['os_mint']}"
+          Macos = "{_G['os_macos']}"
+          Manjaro = ""
+          Linux = "{_G['os_linux']}"
+          Gentoo = "󰣨"
+          Fedora = "{_G['os_fedora']}"
+          Alpine = ""
+          Amazon = ""
+          Android = ""
+          AOSC = ""
+          Arch = "{_G['os_arch']}"
+          CachyOS = "{_G['os_arch']}"
+          Artix = ""
+          EndeavourOS = ""
+          CentOS = ""
+          Debian = "{_G['os_debian']}"
+          Redhat = "󱄛"
+          RedHatEnterprise = "󱄛"
+          Pop = ""
+
+          [username]
+          show_always = true
+          style_user = "bg:orange fg:fg"
+          style_root = "bg:orange fg:fg"
+          format = "[ $user ]($style)"
+          """
+          '''
+          # Remove indentation deliberately introduced above while keeping function body valid.
+          lines = replacement.splitlines()
+          cleaned = [lines[0]]
+          for line in lines[1:]:
+              cleaned.append(line[10:] if line.startswith('          ') else line)
+          replacement = '\n'.join(cleaned) + '\n'
+          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+
+          tests = Path('tests/test_starship_styles.py')
+          t = tests.read_text(encoding='utf-8')
+          marker = 'def test_powerline_matches_newstarship_segment_chain():'
+          addition = '''\n\ndef test_powerline_uses_known_good_distro_glyphs():
+              parsed = tomllib.loads(render("powerline"))
+              symbols = parsed["os"]["symbols"]
+              assert symbols["Arch"] == ""
+              assert symbols["CachyOS"] == ""
+              assert symbols["Debian"] == ""
+              assert symbols["Fedora"] == ""
+              assert symbols["Ubuntu"] == ""
+              assert symbols["Mint"] == ""
+              assert symbols["Linux"] == ""
+              assert symbols["Macos"] == ""
+              assert symbols["Windows"] == ""
+              assert "󰣇" not in render("powerline")
+          '''
+          addition = '\n'.join(line[10:] if line.startswith('          ') else line for line in addition.splitlines()) + '\n'
+          if 'test_powerline_uses_known_good_distro_glyphs' not in t:
+              idx = t.find(marker)
+              if idx == -1:
+                  t += addition
+              else:
+                  t = t[:idx] + addition + '\n' + t[idx:]
+              tests.write_text(t, encoding='utf-8')
+          PY
+
+      - name: Validate
+        run: |
+          python -m py_compile bin/theme_starship.py
+          python -m pip install -r requirements-dev.txt
+          pytest -q tests/test_starship_styles.py
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bin/theme_starship.py tests/test_starship_styles.py
+          git commit -m "fix: restore distro-specific Powerline logos"
+          git push origin HEAD:main
