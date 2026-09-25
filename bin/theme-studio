@@ -19,6 +19,7 @@ from theme_starship import (
     apply_style as apply_starship_style,
     normalize_style as normalize_starship_style,
     profile as starship_profile,
+    render as render_starship,
     save as save_starship_profile,
 )
 
@@ -306,10 +307,35 @@ def starship(args: list[str]) -> int:
         save_starship_profile(values)
         current = normalized
 
-    code = run_legacy(["starship"])
-    if code != 0:
-        return code
+    theme_name = theme_runtime.active_theme()
+    if not theme_name:
+        print("theme starship: no active theme", file=sys.stderr)
+        return 2
+    try:
+        theme = theme_runtime.load_theme(theme_name)
+        roles = dict(theme.get("roles", {}))
+        if not roles:
+            raise ValueError(f"theme '{theme_name}' has no roles")
+        cfg = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()
+        output = cfg / "starship.toml"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        rendered = render_starship(roles, values)
+        fd, temporary = tempfile.mkstemp(prefix=".starship.", suffix=".tmp", dir=output.parent, text=True)
+        temporary_path = Path(temporary)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(rendered)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary_path, output)
+        finally:
+            temporary_path.unlink(missing_ok=True)
+    except Exception as exc:
+        print(f"theme starship: {exc}", file=sys.stderr)
+        return 1
+
     _sync_starship_runtime_only()
+    print(f"starship -> {theme_name}")
     print(f"starship style -> {current}")
     return 0
 
