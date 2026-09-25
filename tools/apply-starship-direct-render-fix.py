@@ -78,8 +78,16 @@ def test_theme_starship_use_powerline_renders_powerline_directly(tmp_path):
     cfg = home / ".config"
     theme_dir = cfg / "hypr" / "themes"
     generated = cfg / "hypr" / "generated"
+    studio = tmp_path / "studio"
     theme_dir.mkdir(parents=True)
     generated.mkdir(parents=True)
+
+    subprocess.run(
+        ["bash", str(ROOT / "tools" / "unpack-theme-studio.sh"), str(studio)],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
 
     source_theme = json.loads((ROOT / "themes" / "gruvbox-dark.json").read_text(encoding="utf-8"))
     (theme_dir / "gruvbox-dark.json").write_text(json.dumps(source_theme), encoding="utf-8")
@@ -88,7 +96,7 @@ def test_theme_starship_use_powerline_renders_powerline_directly(tmp_path):
     env = os.environ.copy()
     env["HOME"] = str(home)
     env["XDG_CONFIG_HOME"] = str(cfg)
-    env["PYTHONPATH"] = str(ROOT / "bin")
+    env["PYTHONPATH"] = os.pathsep.join([str(ROOT / "bin"), str(studio)])
     env["THEME_LEGACY_COMMAND"] = "/bin/false"
 
     proc = subprocess.run(
@@ -106,5 +114,6 @@ def test_theme_starship_use_powerline_renders_powerline_directly(tmp_path):
     assert parsed["format"].startswith("[](orange)$os$username[](bg:warn fg:orange)$directory")
     assert parsed["username"]["show_always"] is True
     assert "󰉋" not in parsed["directory"]["format"]
+    assert "$virtualenv" in parsed["python"]["format"]
     assert "starship style -> powerline" in proc.stdout
 ''', encoding='utf-8')
