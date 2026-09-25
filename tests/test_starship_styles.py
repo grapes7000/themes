@@ -183,3 +183,10 @@ def test_powerline_uses_known_good_distro_glyphs():
     assert symbols["Macos"] == ""
     assert symbols["Windows"] == ""
     assert "󰣇" not in render("powerline")
+
+
+def test_python_segments_show_active_virtualenv_name():
+    for style in starship.STYLE_NAMES:
+        parsed = tomllib.loads(render(style))
+        assert "$virtualenv" in parsed["python"]["format"]
+        assert "venv:" in parsed["python"]["format"]

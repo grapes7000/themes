@@ -484,7 +484,7 @@ format = "{metrics_fmt}"
 
 def _context_config():
     rows = [
-        ("python", _G["python"], "$version", "accent2"),
+        ("python", _G["python"], "$version( venv:$virtualenv)", "accent2"),
         ("nodejs", _G["nodejs"], "$version", "accent2"),
         ("rust", _G["rust"], "$version", "accent2"),
         ("golang", _G["golang"], "$version", "accent2"),
@@ -668,7 +668,7 @@ def _powerline_context_config():
         ("java", "", "$version"),
         ("kotlin", "", "$version"),
         ("haskell", "", "$version"),
-        ("python", "", "$version"),
+        ("python", "", "$version( venv:$virtualenv)"),
     ]
     out = []
     for name, symbol, value in rows:
