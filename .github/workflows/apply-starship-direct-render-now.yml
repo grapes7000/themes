@@ -1,0 +1,37 @@
+name: Apply Starship direct-render fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-starship-direct-render-now.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Apply direct-render patch
+        run: python tools/apply-starship-direct-render-fix.py
+
+      - name: Validate Starship CLI and layouts
+        run: |
+          python -m py_compile bin/theme-studio bin/theme_starship.py
+          python -m pip install -r requirements-dev.txt
+          pytest -q tests/test_starship_styles.py tests/test_theme_starship_cli.py
+
+      - name: Commit fix and clean up one-time patcher
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bin/theme-studio tests/test_theme_starship_cli.py
+          git rm tools/apply-starship-direct-render-fix.py .github/workflows/apply-starship-direct-render-now.yml
+          git commit -m "fix: render selected Starship layout directly"
+          git push origin HEAD:main
