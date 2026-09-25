@@ -1,0 +1,105 @@
+name: Fix Starship direct render
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-starship-direct-render.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Patch direct Starship rendering
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('bin/theme-studio')
+          text = path.read_text(encoding='utf-8')
+
+          old_import = '''    normalize_style as normalize_starship_style,\n    profile as starship_profile,\n    save as save_starship_profile,\n)'''
+          new_import = '''    normalize_style as normalize_starship_style,\n    profile as starship_profile,\n    render as render_starship,\n    save as save_starship_profile,\n)'''
+          if old_import not in text:
+              raise SystemExit('expected Starship import block not found')
+          text = text.replace(old_import, new_import, 1)
+
+          old = '''    code = run_legacy(["starship"])\n    if code != 0:\n        return code\n    _sync_starship_runtime_only()\n    print(f"starship style -> {current}")\n    return 0\n'''
+          new = '''    theme_name = theme_runtime.active_theme()\n    if not theme_name:\n        print("theme starship: no active theme", file=sys.stderr)\n        return 2\n    try:\n        theme = theme_runtime.load_theme(theme_name)\n        roles = dict(theme.get("roles", {}))\n        if not roles:\n            raise ValueError(f"theme '{theme_name}' has no roles")\n        cfg = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()\n        output = cfg / "starship.toml"\n        output.parent.mkdir(parents=True, exist_ok=True)\n        rendered = render_starship(roles, values)\n        fd, temporary = tempfile.mkstemp(prefix=".starship.", suffix=".tmp", dir=output.parent, text=True)\n        temporary_path = Path(temporary)\n        try:\n            with os.fdopen(fd, "w", encoding="utf-8") as handle:\n                handle.write(rendered)\n                handle.flush()\n                os.fsync(handle.fileno())\n            os.replace(temporary_path, output)\n        finally:\n            temporary_path.unlink(missing_ok=True)\n    except Exception as exc:\n        print(f"theme starship: {exc}", file=sys.stderr)\n        return 1\n\n    _sync_starship_runtime_only()\n    print(f"starship -> {theme_name}")\n    print(f"starship style -> {current}")\n    return 0\n'''
+          if old not in text:
+              raise SystemExit('expected legacy Starship handoff not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+
+          test = Path('tests/test_theme_starship_cli.py')
+          test.write_text(r'''from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tomllib
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_theme_starship_use_powerline_renders_powerline_directly(tmp_path):
+    home = tmp_path / "home"
+    cfg = home / ".config"
+    theme_dir = cfg / "hypr" / "themes"
+    generated = cfg / "hypr" / "generated"
+    theme_dir.mkdir(parents=True)
+    generated.mkdir(parents=True)
+
+    source_theme = json.loads((ROOT / "themes" / "gruvbox-dark.json").read_text(encoding="utf-8"))
+    (theme_dir / "gruvbox-dark.json").write_text(json.dumps(source_theme), encoding="utf-8")
+    (generated / ".active").write_text("gruvbox-dark\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    env["XDG_CONFIG_HOME"] = str(cfg)
+    env["PYTHONPATH"] = str(ROOT / "bin")
+    env["THEME_LEGACY_COMMAND"] = "/bin/false"
+
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "bin" / "theme-studio"), "starship", "use", "powerline"],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+    output = cfg / "starship.toml"
+    text = output.read_text(encoding="utf-8")
+    parsed = tomllib.loads(text)
+    assert "STARSHIP_STYLE = powerline" in text
+    assert parsed["format"].startswith("[](orange)$os$username[](bg:warn fg:orange)$directory")
+    assert parsed["username"]["show_always"] is True
+    assert "󰉋" not in parsed["directory"]["format"]
+    assert "starship style -> powerline" in proc.stdout
+''', encoding='utf-8')
+          PY
+
+      - name: Validate
+        run: |
+          python -m py_compile bin/theme-studio bin/theme_starship.py
+          python -m pip install -r requirements-dev.txt
+          pytest -q tests/test_starship_styles.py tests/test_theme_starship_cli.py
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bin/theme-studio tests/test_theme_starship_cli.py
+          git commit -m "fix: render Starship layouts directly from Theme Studio"
+          git push origin HEAD:main
