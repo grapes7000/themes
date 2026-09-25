@@ -35,3 +35,5 @@ jobs:
           git rm tools/apply-starship-direct-render-fix.py .github/workflows/apply-starship-direct-render-now.yml
           git commit -m "fix: render selected Starship layout directly"
           git push origin HEAD:main
+
+# rerun after fixing the integration-test PYTHONPATH
