@@ -5,6 +5,7 @@ import "../components"
 import "../theme"
 
 Item {
+    signal createRequested()
     ColumnLayout {
         anchors.fill: parent
         spacing: 14
@@ -12,6 +13,7 @@ Item {
             Layout.fillWidth: true
             Text { text: "Themes"; color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: 28; font.weight: Font.Bold }
             Item { Layout.fillWidth: true }
+            PrimaryButton { text: "New theme"; onClicked: createRequested() }
             SecondaryButton { text: "Refresh"; onClicked: studioBridge.reloadThemes() }
         }
         Text { text: "Pick a saved theme. With live preview on, selecting one previews it immediately without saving anything."; color: Theme.textSecondary; font.family: Theme.fontFamily; font.pixelSize: 13; wrapMode: Text.WordWrap; Layout.fillWidth: true }

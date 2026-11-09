@@ -1,18 +1,25 @@
-#!/usr/bin/env python3
 """Safe working-copy lifecycle for Theme Studio."""
+
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import dataclass, field
 import json
 import os
-from pathlib import Path
 import shutil
 import tempfile
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from copy import deepcopy
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
-from theme_schema import dump_json, ensure_theme_schema, safe_theme_name, synchronize_style, validate_theme
+from theme_schema import (
+    dump_json,
+    ensure_theme_schema,
+    safe_theme_name,
+    synchronize_style,
+    validate_theme,
+)
 
 
 class EditorError(RuntimeError):
@@ -20,16 +27,25 @@ class EditorError(RuntimeError):
 
 
 def _default_theme_dir() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "hypr" / "themes"
+    return (
+        Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        / "hypr"
+        / "themes"
+    )
 
 
 def _state_dir() -> Path:
-    return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "theme-studio"
+    return (
+        Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+        / "theme-studio"
+    )
 
 
 def _atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent), text=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", dir=str(path.parent), text=True
+    )
     temp = Path(temp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -77,9 +93,14 @@ class ThemeEditor:
         self.draft = deepcopy(self.original)
 
     @classmethod
-    def from_data(cls, name: str, data: dict[str, Any], theme_dir: Path | None = None,
-                  preview_callback: Callable[[dict[str, Any], str], None] | None = None,
-                  restore_callback: Callable[[str], None] | None = None) -> "ThemeEditor":
+    def from_data(
+        cls,
+        name: str,
+        data: dict[str, Any],
+        theme_dir: Path | None = None,
+        preview_callback: Callable[[dict[str, Any], str], None] | None = None,
+        restore_callback: Callable[[str], None] | None = None,
+    ) -> ThemeEditor:
         obj = cls.__new__(cls)
         obj.theme_name = safe_theme_name(name)
         obj.theme_dir = Path(theme_dir or _default_theme_dir()).expanduser()
@@ -108,7 +129,12 @@ class ThemeEditor:
             del self.undo_stack[: len(self.undo_stack) - self.max_history]
         self.redo_stack.clear()
 
-    def mutate(self, label: str, mutator: Callable[[dict[str, Any]], None], preview: bool = True) -> None:
+    def mutate(
+        self,
+        label: str,
+        mutator: Callable[[dict[str, Any]], None],
+        preview: bool = True,
+    ) -> None:
         before = deepcopy(self.draft)
         mutator(self.draft)
         synchronize_style(self.draft)
@@ -123,7 +149,9 @@ class ThemeEditor:
         if preview and self.desktop_preview:
             self.preview(label)
 
-    def replace_draft(self, label: str, data: dict[str, Any], preview: bool = True) -> None:
+    def replace_draft(
+        self, label: str, data: dict[str, Any], preview: bool = True
+    ) -> None:
         before = deepcopy(self.draft)
         candidate = ensure_theme_schema(data)
         if candidate == before:
@@ -162,6 +190,7 @@ class ThemeEditor:
 
     def reset_section(self, path: str) -> None:
         from theme_schema import deep_get, deep_set
+
         original = deepcopy(deep_get(self.original, path))
         self.mutate(f"Reset {path}", lambda d: deep_set(d, path, original))
 
@@ -182,17 +211,47 @@ class ThemeEditor:
     def validate(self) -> list[dict[str, str]]:
         return validate_theme(self.draft)
 
-    def save(self, name: str | None = None, replace: bool = False, apply: bool = True) -> Path:
+    def save(
+        self, name: str | None = None, replace: bool = False, apply: bool = True
+    ) -> Path:
         target_name = safe_theme_name(name or self.theme_name)
         target = self.theme_path(target_name)
         if target.exists() and target_name != self.theme_name and not replace:
             raise EditorError(f"Theme already exists: {target_name}")
         errors = [issue for issue in self.validate() if issue["level"] == "error"]
         if errors:
-            raise EditorError(f"Theme has {len(errors)} validation error(s); fix them before saving.")
+            raise EditorError(
+                f"Theme has {len(errors)} validation error(s); fix them before saving."
+            )
+        motion_keys = (
+            "animation_preset",
+            "animation_speed_multiplier",
+            "workspace_style",
+            "layer_animation_enabled",
+            "layer_style",
+            "custom_bezier_x1",
+            "custom_bezier_y1",
+            "custom_bezier_x2",
+            "custom_bezier_y2",
+            "spring_stiffness",
+            "spring_dampening",
+            "spring_mass",
+        )
+        if any(
+            self.draft["style"].get(key) != self.original["style"].get(key)
+            for key in motion_keys
+        ):
+            import theme_effects
+
+            if theme_effects.profile_anim():
+                theme_effects.save_anim(None)
         synchronize_style(self.draft)
+        if target_name != self.theme_name:
+            self.draft["name"] = target_name
         self.draft["version"] = max(3, int(self.draft.get("version", 3)))
-        self.draft.setdefault("studio", {})["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        self.draft.setdefault("studio", {})["saved_at"] = time.strftime(
+            "%Y-%m-%dT%H:%M:%S%z"
+        )
         if target.exists():
             backup_dir = _state_dir() / "backups" / target_name
             backup_dir.mkdir(parents=True, exist_ok=True)
@@ -228,7 +287,9 @@ class ThemeEditor:
             "draft": self.draft,
         }
         try:
-            _atomic_write(path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+            _atomic_write(
+                path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+            )
         except OSError:
             pass
 
@@ -238,7 +299,9 @@ class ThemeEditor:
         if not directory.exists():
             return []
         result = []
-        for path in sorted(directory.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        for path in sorted(
+            directory.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+        ):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 data["path"] = str(path)
@@ -248,11 +311,20 @@ class ThemeEditor:
         return result
 
     @classmethod
-    def from_recovery(cls, recovery: dict[str, Any], theme_dir: Path | None = None,
-                      preview_callback: Callable[[dict[str, Any], str], None] | None = None,
-                      restore_callback: Callable[[str], None] | None = None) -> "ThemeEditor":
-        obj = cls.from_data(recovery["theme_name"], recovery["original"], theme_dir,
-                            preview_callback, restore_callback)
+    def from_recovery(
+        cls,
+        recovery: dict[str, Any],
+        theme_dir: Path | None = None,
+        preview_callback: Callable[[dict[str, Any], str], None] | None = None,
+        restore_callback: Callable[[str], None] | None = None,
+    ) -> ThemeEditor:
+        obj = cls.from_data(
+            recovery["theme_name"],
+            recovery["original"],
+            theme_dir,
+            preview_callback,
+            restore_callback,
+        )
         obj.draft = ensure_theme_schema(recovery["draft"])
         obj.dirty = obj.draft != obj.original
         obj._write_recovery()
@@ -270,7 +342,9 @@ def load_theme(name: str, theme_dir: Path | None = None) -> dict[str, Any]:
     return ensure_theme_schema(json.loads(path.read_text(encoding="utf-8")))
 
 
-def duplicate_theme(source: str, destination: str, theme_dir: Path | None = None) -> Path:
+def duplicate_theme(
+    source: str, destination: str, theme_dir: Path | None = None
+) -> Path:
     directory = Path(theme_dir or _default_theme_dir()).expanduser()
     src = directory / f"{safe_theme_name(source)}.json"
     dst = directory / f"{safe_theme_name(destination)}.json"

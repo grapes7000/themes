@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "win95",
+  "description": "Compact retro desktop grammar inspired by classic controls.",
+  "metrics": {"grid": 2, "spacing_xs": 2, "spacing_sm": 4, "spacing_md": 6, "spacing_lg": 8, "page_padding": 12, "section_gap": 12, "control_height": 24, "sidebar_width": 180, "radius_control": 0, "radius_surface": 0, "border_width": 1, "font_body": 12, "font_title": 14},
+  "patterns": {"surface": "bevel", "section": "group", "list_row": "flat", "selection": "solid-accent", "button": "bevel", "field": "sunken", "dialog": "framed", "status": "semantic-direct", "shadow": "hard"},
+  "rules": {"allow_local_spacing": false, "allow_local_radius": false, "allow_local_font_size": false, "allow_local_border_width": false, "allow_nested_cards": false}
+}

@@ -10,7 +10,14 @@ Item {
     property var presets: JSON.parse(studioBridge.windowPresetsJson)
     property var roles: JSON.parse(studioBridge.roleNamesJson)
     property bool advancedFields: false
-    Connections { target: studioBridge; function onStateChanged() { root.rows = JSON.parse(studioBridge.windowRowsJson) } }
+    property bool sliderDragging: false
+    property bool refreshPending: false
+    function refreshRows() {
+        if (sliderDragging) { refreshPending = true; return }
+        rows = JSON.parse(studioBridge.windowRowsJson)
+        refreshPending = false
+    }
+    Connections { target: studioBridge; function onStateChanged() { root.refreshRows() } }
 
     ScrollView {
         anchors.fill: parent
@@ -34,6 +41,21 @@ Item {
                             required property string modelData
                             text: modelData.replace(/_/g, " ")
                             onClicked: studioBridge.setWindowPreset(modelData)
+                        }
+                    }
+                }
+            }
+            SectionCard {
+                Layout.fillWidth: true
+                title: "Motion and effects profiles"
+                subtitle: "Choose a starting point, then adjust its settings below."
+                RowLayout {
+                    Repeater {
+                        model: ["performance", "balanced", "cinematic"]
+                        delegate: SecondaryButton {
+                            required property string modelData
+                            text: modelData
+                            onClicked: studioBridge.setMotionProfile(modelData)
                         }
                     }
                 }
@@ -76,7 +98,7 @@ Item {
                         Switch {
                             visible: modelData.kind === "bool"
                             checked: modelData.value === "True" || modelData.value === "true"
-                            onToggled: studioBridge.setWindowValue(modelData.path, checked ? "true" : "false")
+                            onClicked: studioBridge.setWindowValue(modelData.path, checked ? "true" : "false")
                             Keys.onLeftPressed: function(event) {
                                 studioBridge.adjustWindowValue(modelData.path, -1)
                                 event.accepted = true
@@ -88,10 +110,12 @@ Item {
                         }
                         Slider {
                             id: numericSlider
+                            objectName: modelData.path
                             visible: modelData.kind === "int" || modelData.kind === "float"
                             from: modelData.minimum === null ? 0 : modelData.minimum
                             to: modelData.maximum === null ? 100 : modelData.maximum
                             stepSize: modelData.step === null ? 1 : modelData.step
+                            snapMode: Slider.SnapAlways
                             value: Number(modelData.value)
                             Layout.fillWidth: true
                             Accessible.name: modelData.label
@@ -103,17 +127,19 @@ Item {
                                 studioBridge.adjustWindowValue(modelData.path, 1)
                                 event.accepted = true
                             }
-                            onMoved: studioBridge.setWindowValue(modelData.path, String(value))
+                            onMoved: if (!pressed) studioBridge.setWindowValue(modelData.path, String(value))
+                            onPressedChanged: {
+                                if (pressed) root.sliderDragging = true
+                                else if (root.sliderDragging) {
+                                    studioBridge.setWindowValue(modelData.path, String(value))
+                                    root.sliderDragging = false
+                                    if (root.refreshPending) root.refreshRows()
+                                }
+                            }
                         }
-                        TextField {
-                            visible: modelData.kind !== "choice" && modelData.kind !== "role" && modelData.kind !== "bool"
-                            text: modelData.value
-                            selectByMouse: true
-                            Layout.preferredWidth: 88
-                            color: Theme.textPrimary
-                            background: Rectangle { color: Theme.bgElevated; border.color: parent.activeFocus ? Theme.focusRing : Theme.border; radius: Theme.radiusSmall }
-                            onEditingFinished: studioBridge.setWindowValue(modelData.path, text)
-                        }
+                        SecondaryButton { visible: numericSlider.visible; text: "−"; onClicked: studioBridge.adjustWindowValue(modelData.path, -1) }
+                        Text { visible: numericSlider.visible; text: numericSlider.pressed ? Number(numericSlider.value.toFixed(3)) : modelData.value; color: Theme.textPrimary; Layout.preferredWidth: 60; horizontalAlignment: Text.AlignHCenter }
+                        SecondaryButton { visible: numericSlider.visible; text: "+"; onClicked: studioBridge.adjustWindowValue(modelData.path, 1) }
                         Text { visible: modelData.advanced; text: "advanced"; color: Theme.textMuted; font.pixelSize: 11 }
                     }
                 }

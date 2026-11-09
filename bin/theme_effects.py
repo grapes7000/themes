@@ -14,7 +14,8 @@ import tempfile
 
 PROFILE_PATH = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
-    "theme-engine", "effects.json",
+    "theme-engine",
+    "effects.json",
 )
 
 # ── Shapes: geometry overrides ─────────────────────────────────────────
@@ -241,6 +242,8 @@ ANIMS = {
             "animation = borderangle, 1, 20, spike, loop",
         ],
     },
+    "custom": {"enabled": True, "lines": []},
+    "spring": {"enabled": True, "lines": []},
 }
 
 # ── Offset keys applied to theme base values ─────────────────────────
@@ -254,16 +257,22 @@ OFFSET_KEYS = {
 
 # Texture keys that directly replace theme values
 TEXTURE_DIRECT_KEYS = [
-    "blur_on", "blur_strength", "shadow_on", "shadow_radius",
-    "shadow_opacity", "inactive_dim",
+    "blur_on",
+    "blur_strength",
+    "shadow_on",
+    "shadow_radius",
+    "shadow_opacity",
+    "inactive_dim",
 ]
 
 # Shape keys that directly replace theme values
 SHAPE_DIRECT_KEYS = [
-    "border_width", "corner_radius",
+    "border_width",
+    "corner_radius",
 ]
 
 # ── Profile persistence ──────────────────────────────────────────────
+
 
 def _load_profile_raw():
     try:
@@ -355,6 +364,7 @@ def save(preset_name):
 
 # ── Validation / listing ─────────────────────────────────────────────
 
+
 def validate_preset(name):
     return name in TEXTURES
 
@@ -389,6 +399,7 @@ def list_anims():
 
 # ── Style resolution ─────────────────────────────────────────────────
 
+
 def resolve(style, shape_name=None, texture_name=None):
     """Merge shape and texture overrides onto the theme's base style dict.
     Back-compat: if called with a single string second arg and no third,
@@ -419,28 +430,41 @@ def resolve(style, shape_name=None, texture_name=None):
         for key in TEXTURE_DIRECT_KEYS:
             if key in texture:
                 merged[key] = texture[key]
-        for extra in ("blur_passes", "blur_noise", "blur_contrast",
-                       "blur_brightness", "blur_vibrancy",
-                       "shadow_render_power", "shadow_offset", "bar_blur"):
+        for extra in (
+            "blur_passes",
+            "blur_noise",
+            "blur_contrast",
+            "blur_brightness",
+            "blur_vibrancy",
+            "shadow_render_power",
+            "shadow_offset",
+            "bar_blur",
+        ):
             if extra in texture:
                 merged[extra] = texture[extra]
         for offset_key, (target, lo, hi) in OFFSET_KEYS.items():
             if offset_key in texture:
                 base = float(merged.get(target, 1.0 if "opacity" in target else 8))
-                merged[target] = round(max(lo, min(hi, base + texture[offset_key])), 2)
+                merged[target] = round(
+                    max(lo, min(hi, base + float(texture[offset_key]))), 2
+                )
 
     return merged
 
 
 # ── Animation rendering ──────────────────────────────────────────────
 
-def render_animations(anim_name):
-    if anim_name is None:
+
+def render_animations(anim_name, style=None):
+    if anim_name is None or anim_name not in ANIMS:
         return []
-    if anim_name not in ANIMS:
+    from theme_motion import animation_lines
+
+    preset_lines = ANIMS[anim_name]["lines"]
+    if not isinstance(preset_lines, list):
         return []
-    anim = ANIMS[anim_name]
-    if not anim["enabled"]:
+    enabled, resolved = animation_lines(anim_name, style or {}, preset_lines)
+    if not enabled:
         return [
             "",
             "animations {",
@@ -452,7 +476,7 @@ def render_animations(anim_name):
         "animations {",
         "    enabled = true",
     ]
-    for anim_line in anim["lines"]:
+    for anim_line in resolved:
         lines.append(f"    {anim_line}")
     lines.append("}")
     return lines

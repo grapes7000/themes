@@ -19,6 +19,34 @@ ApplicationWindow {
     Component.onCompleted: syncTheme()
     onClosing: function(close) { studioBridge.closeSession() }
     Connections { target: themeBridge; function onThemeChanged() { root.syncTheme() } }
+    Dialog {
+        id: saveChoice
+        title: "How would you like to save?"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        standardButtons: Dialog.Cancel
+        contentItem: ColumnLayout {
+            spacing: 12
+            Text { text: "You are editing " + studioBridge.themeName + "."; color: Theme.textPrimary; font.family: Theme.fontFamily }
+            PrimaryButton { text: "Save as a new theme"; Layout.fillWidth: true; onClicked: { saveChoice.close(); saveAsDialog.open() } }
+            SecondaryButton { text: "Update " + studioBridge.themeName; Layout.fillWidth: true; onClicked: { saveChoice.close(); studioBridge.saveAndApply() } }
+        }
+    }
+    Dialog {
+        id: saveAsDialog
+        title: "Save as a new theme"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: 430
+        standardButtons: Dialog.Save | Dialog.Cancel
+        onOpened: { newThemeName.text = ""; newThemeName.forceActiveFocus() }
+        onAccepted: studioBridge.duplicateTheme(newThemeName.text)
+        contentItem: ColumnLayout {
+            spacing: 10
+            Text { text: "Choose a name. Your existing theme will stay unchanged."; color: Theme.textPrimary; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            TextField { id: newThemeName; placeholderText: "New theme name"; selectByMouse: true; Layout.fillWidth: true }
+        }
+    }
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
@@ -41,7 +69,7 @@ ApplicationWindow {
                 SecondaryButton { text: "Undo"; enabled: studioBridge.canUndo; onClicked: studioBridge.undo() }
                 SecondaryButton { text: "Redo"; enabled: studioBridge.canRedo; onClicked: studioBridge.redo() }
                 SecondaryButton { text: "Cancel"; enabled: studioBridge.dirty; onClicked: studioBridge.cancelChanges() }
-                PrimaryButton { text: "Save & Apply"; enabled: studioBridge.themeName.length > 0; onClicked: studioBridge.saveAndApply() }
+                PrimaryButton { text: "Save & Apply"; enabled: studioBridge.themeName.length > 0; onClicked: studioBridge.dirty ? saveChoice.open() : studioBridge.saveAndApply() }
             }
         }
         RowLayout {
@@ -95,8 +123,8 @@ ApplicationWindow {
                     anchors.fill: parent
                     anchors.margins: 28
                     currentIndex: root.currentPage
-                    ThemesPage {}
-                    PalettePage {}
+                    ThemesPage { onCreateRequested: { root.currentPage = 1; palettePage.openNewTheme() } }
+                    PalettePage { id: palettePage }
                     StylePage {}
                     WindowsPage {}
                     QuickshellPage {}

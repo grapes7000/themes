@@ -1,20 +1,21 @@
-#!/usr/bin/env python3
 """Runtime bridge between the stable legacy generator and Theme Studio overrides."""
+
 from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 from typing import Any
 
+import theme_ui
 from theme_components import apply_all
-from theme_schema import dump_json, ensure_theme_schema, safe_theme_name
+from theme_schema import dump_json, ensure_theme_schema, role_color, safe_theme_name
 
 CFG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
@@ -22,6 +23,56 @@ THEME_DIR = CFG / "hypr" / "themes"
 ACTIVE_FILE = CFG / "hypr" / "generated" / ".active"
 TARGETS_FILE = CFG / "theme-engine" / "targets.conf"
 RENDER_ROOT = CACHE / "theme-engine" / "wallpapers"
+UiStyleError = ValueError
+
+
+def list_ui_styles() -> list[str]:
+    return theme_ui.list_profiles()
+
+
+def is_custom_ui_style(name: str) -> bool:
+    return (theme_ui.PROFILE_DIR / "custom" / f"{name}.json").is_file()
+
+
+def load_ui_style(name: str) -> dict[str, Any]:
+    return theme_ui.load_profile(name)
+
+
+def save_ui_style(name: str, payload: dict[str, Any]) -> Path:
+    if not theme_ui._valid_name(name):
+        raise ValueError(
+            "UI style names may contain only lowercase letters, numbers, _ and -"
+        )
+    if name in theme_ui.list_profiles() and not is_custom_ui_style(name):
+        raise ValueError(f"UI style '{name}' already exists")
+    data = dict(payload)
+    data["name"] = name
+    path = theme_ui.PROFILE_DIR / "custom" / f"{name}.json"
+    theme_ui._atomic_json(path, data)
+    return path
+
+
+def current_ui_style_name() -> str:
+    name = active_theme()
+    theme = load_theme(name) if name else None
+    return theme_ui.resolved_name(theme)[0]
+
+
+def restore_ui_style() -> None:
+    name = active_theme()
+    theme_ui.publish(load_theme(name) if name else None, name)
+
+
+def apply_ui_style(name: str) -> None:
+    theme_ui.load_profile(name)
+    theme_ui.set_override(name)
+    restore_ui_style()
+
+
+def preview_ui_style(payload: dict[str, Any]) -> None:
+    theme_ui._atomic_json(theme_ui.CONTRACT_FILE, payload)
+
+
 # This name is passed through ``safe_theme_name()`` when the preview is loaded.
 # Do not begin it with punctuation: the sanitizer strips a leading underscore,
 # which previously made the writer and reader disagree on the file path.
@@ -37,12 +88,21 @@ def active_theme() -> str | None:
         # A killed/failed preview used to leave the temporary name in .active.
         # Recovery records retain the theme the preview was editing, so return
         # that durable name until the next successful apply repairs the marker.
-        recovery = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "theme-studio" / "recovery" / f"{PREVIEW_NAME}.json"
+        recovery = (
+            Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+            / "theme-studio"
+            / "recovery"
+            / f"{PREVIEW_NAME}.json"
+        )
         try:
             payload = json.loads(recovery.read_text(encoding="utf-8"))
             original = payload.get("original", {})
             candidate = str(original.get("name") or payload.get("theme_name") or "")
-            if candidate and candidate != PREVIEW_NAME and (THEME_DIR / f"{safe_theme_name(candidate)}.json").is_file():
+            if (
+                candidate
+                and candidate != PREVIEW_NAME
+                and (THEME_DIR / f"{safe_theme_name(candidate)}.json").is_file()
+            ):
                 return safe_theme_name(candidate)
         except (OSError, ValueError, AttributeError):
             pass
@@ -132,7 +192,9 @@ def write_preview(data: dict[str, Any]) -> Path:
 
 def _atomic_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent, text=True)
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", dir=path.parent, text=True
+    )
     temporary_path = Path(temporary)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -144,14 +206,17 @@ def _atomic_text(path: Path, content: str) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
-def _render_hypr_lua(theme: dict[str, Any], name: str) -> str:
+def _render_hypr_lua(theme: dict[str, Any], name: str, *, preview: bool = False) -> str:
     """Render the active Arch-WM Lua theme contract from a Studio draft."""
     import theme_effects
+    import theme_motion
 
     theme = ensure_theme_schema(theme)
     roles = dict(theme["roles"])
     style = theme_effects.resolve(
-        dict(theme.get("style", {})), theme_effects.profile_shape(), theme_effects.profile_texture()
+        dict(theme.get("style", {})),
+        theme_effects.profile_shape(),
+        theme_effects.profile_texture(),
     )
     roles.setdefault("bg_alt", roles["bg"])
     roles.setdefault("focus", roles["accent"])
@@ -167,29 +232,53 @@ def _render_hypr_lua(theme: dict[str, Any], name: str) -> str:
     def enabled(value: Any, default: bool) -> bool:
         if value is None:
             return default
-        return value if isinstance(value, bool) else str(value).lower() in {"1", "true", "yes", "on"}
+        return (
+            value
+            if isinstance(value, bool)
+            else str(value).lower() in {"1", "true", "yes", "on"}
+        )
 
     gaps = int(style.get("gaps", 8))
-    focus = f"rgba({color(roles['focus'])}ff)"
-    accent2 = f"rgba({color(roles['accent2'])}ff)"
-    inactive = f"rgba({color(roles['border_normal'])}aa)"
+    windows = theme.get("components", {}).get("windows", {})
+    inner_gaps = int(windows.get("gaps_in", gaps // 2))
+    active_border = windows.get("active_border", {})
+    inactive_border = windows.get("inactive_border", {})
+    border_alpha = alpha(active_border.get("opacity", 1.0))
+    focus = f"rgba({color(role_color(theme, str(active_border.get('color', 'focus'))))}{border_alpha})"
+    accent2 = f"rgba({color(role_color(theme, str(active_border.get('color_2', 'accent2'))))}{border_alpha})"
+    inactive_color = role_color(
+        theme, str(inactive_border.get("color", "border_normal"))
+    )
+    inactive = (
+        f"rgba({color(inactive_color)}{alpha(inactive_border.get('opacity', 0.66))})"
+    )
+    colors = [focus] if active_border.get("style") == "solid" else [focus, accent2]
     shadow_color = color(style.get("shadow_color", roles.get("shadow", "#000000")))
     shadow_argb = f"0x{alpha(style.get('shadow_opacity', 0.4))}{shadow_color}"
     lines = [
         "-- AUTO-GENERATED by Theme Studio. Do not edit by hand.",
-        f"-- Theme: {name}", "hl.config({", "    general = {",
+        f"-- Theme: {name}",
+        "hl.config({",
+        "    general = {",
         f"        border_size = {int(style.get('border_width', 2))},",
-        f"        gaps_in = {max(0, gaps // 2)},", f"        gaps_out = {gaps},",
-        "        col = {", "            active_border = {",
-        f"                colors = {{ {json.dumps(focus)}, {json.dumps(accent2)} }},",
-        "                angle = 45,", "            },",
-        f"            inactive_border = {json.dumps(inactive)},", "        },", "    },",
-        "    decoration = {", f"        rounding = {int(style.get('corner_radius', 10))},",
+        f"        gaps_in = {max(0, inner_gaps)},",
+        f"        gaps_out = {gaps},",
+        "        col = {",
+        "            active_border = {",
+        f"                colors = {{ {', '.join(json.dumps(item) for item in colors)} }},",
+        f"                angle = {int(active_border.get('angle', 45))},",
+        "            },",
+        f"            inactive_border = {json.dumps(inactive)},",
+        "        },",
+        "    },",
+        "    decoration = {",
+        f"        rounding = {int(style.get('corner_radius', 10))},",
         f"        rounding_power = {float(style.get('rounding_power', 2.0))},",
         f"        active_opacity = {float(style.get('opacity', 1.0))},",
         f"        inactive_opacity = {float(style.get('opacity_inactive', 1.0))},",
         f"        dim_inactive = {str(float(style.get('inactive_dim', 0)) > 0).lower()},",
-        f"        dim_strength = {float(style.get('inactive_dim', 0))},", "        blur = {",
+        f"        dim_strength = {float(style.get('inactive_dim', 0))},",
+        "        blur = {",
         f"            enabled = {str(enabled(style.get('blur_on'), True)).lower()},",
         f"            size = {int(style.get('blur_strength', 8))},",
         f"            passes = {int(style.get('blur_passes', 3))},",
@@ -197,23 +286,54 @@ def _render_hypr_lua(theme: dict[str, Any], name: str) -> str:
         f"            contrast = {float(style.get('blur_contrast', 0.8916))},",
         f"            brightness = {float(style.get('blur_brightness', 0.8172))},",
         f"            vibrancy = {float(style.get('blur_vibrancy', 0.1696))},",
-        "            new_optimizations = true,", "            xray = false,", "        },", "        shadow = {",
+        "            new_optimizations = true,",
+        "            xray = false,",
+        "        },",
+        "        shadow = {",
         f"            enabled = {str(enabled(style.get('shadow_on'), True)).lower()},",
         f"            range = {int(style.get('shadow_radius', 20))},",
         f"            render_power = {int(style.get('shadow_render_power', 3))},",
         f"            offset = {json.dumps(str(style.get('shadow_offset', '0 0')))},",
-        f"            color = {shadow_argb},", "        },", "    },", "})",
+        f"            color = {shadow_argb},",
+        "        },",
+        "        glow = {",
+        f"            enabled = {str(int(windows.get('glow', 0)) > 0).lower()},",
+        f"            range = {int(windows.get('glow', 0))},",
+        f"            color = {json.dumps(focus)},",
+        f"            color_inactive = {json.dumps(inactive)},",
+        "        },",
+        "    },",
+        "})",
     ]
+    animation = str(
+        (None if preview else theme_effects.profile_anim())
+        or style.get("animation_preset", "smooth")
+    )
+    preset = theme_effects.ANIMS.get(animation, theme_effects.ANIMS["smooth"])
+    preset_lines = preset["lines"]
+    if isinstance(preset_lines, list):
+        lines.extend(theme_motion.render_lua(animation, style, preset_lines))
+    lines.extend(theme_motion.render_effects_lua(style))
     return "\n".join(lines) + "\n"
 
 
-def _write_live_contract(theme: dict[str, Any], name: str) -> None:
+def _write_live_contract(
+    theme: dict[str, Any], name: str, *, preview: bool = False
+) -> None:
     """Publish only the live desktop files; no legacy generator or wallpaper work."""
     normalized = ensure_theme_schema(theme)
-    _atomic_text(CFG / "hypr" / "generated" / "theme.lua", _render_hypr_lua(normalized, name))
+    _atomic_text(
+        CFG / "hypr" / "generated" / "theme.lua",
+        _render_hypr_lua(normalized, name, preview=preview),
+    )
     payload = dict(normalized)
+    payload["schema_version"] = 1
     payload["name"] = name
-    _atomic_text(CFG / "theme-engine" / "generated" / "theme.json", json.dumps(payload, indent=2) + "\n")
+    payload["hyprland_owner"] = "theme-engine"
+    _atomic_text(
+        CFG / "theme-engine" / "generated" / "theme.json",
+        json.dumps(payload, indent=2) + "\n",
+    )
 
 
 def cleanup_preview() -> None:
@@ -225,7 +345,7 @@ def _run_legacy(name: str) -> tuple[bool, str]:
     command = legacy_command()
     if not command:
         return False, "legacy generator not found"
-    proc = subprocess.run(command + [name], text=True, capture_output=True)
+    proc = subprocess.run(command + [name], text=True, capture_output=True, check=False)
     message = (proc.stdout or proc.stderr or "").strip()
     return proc.returncode == 0, message
 
@@ -264,7 +384,12 @@ def _sync_semantic_wallpaper(name: str) -> tuple[bool, str]:
     command = wallgen_command()
     if not command:
         return False, ""
-    proc = subprocess.run(command + ["semantic", "apply", name, "--set"], text=True, capture_output=True)
+    proc = subprocess.run(
+        command + ["semantic", "apply", name, "--set"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
     message = (proc.stdout or proc.stderr or "").strip()
     if proc.returncode != 0:
         return False, message
@@ -287,10 +412,14 @@ def _reload_hyprland() -> tuple[bool, str]:
     env = _hyprland_environment()
     if not env:
         return False, "not in a Hyprland session"
-    proc = subprocess.run([hyprctl, "reload"], text=True, capture_output=True, env=env)
+    proc = subprocess.run(
+        [hyprctl, "reload"], text=True, capture_output=True, env=env, check=False
+    )
     message = (proc.stdout or proc.stderr or "").strip()
     if proc.returncode != 0:
-        raise RuntimeError(f"Hyprland reload failed: {message or f'exit {proc.returncode}'}")
+        raise RuntimeError(
+            f"Hyprland reload failed: {message or f'exit {proc.returncode}'}"
+        )
     return True, message
 
 
@@ -321,31 +450,51 @@ def _hyprland_environment() -> dict[str, str] | None:
 
 def _hyprpaper_monitors(hyprctl: str, env: dict[str, str]) -> list[str]:
     """Return connected output names without making wallpaper selection implicit."""
-    proc = subprocess.run([hyprctl, "monitors", "-j"], text=True, capture_output=True, env=env)
+    proc = subprocess.run(
+        [hyprctl, "monitors", "-j"],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
     if proc.returncode:
         return []
     try:
         monitors = json.loads(proc.stdout)
     except json.JSONDecodeError:
         return []
-    return [item["name"] for item in monitors if isinstance(item, dict) and item.get("name")]
+    return [
+        item["name"] for item in monitors if isinstance(item, dict) and item.get("name")
+    ]
 
 
 def _ensure_hyprpaper(hyprctl: str, env: dict[str, str]) -> tuple[bool, str]:
     """Start Hyprpaper on demand and wait briefly for its IPC socket."""
     probe = [hyprctl, "hyprpaper", "listactive"]
-    if subprocess.run(probe, text=True, capture_output=True, env=env).returncode == 0:
+    if (
+        subprocess.run(
+            probe, text=True, capture_output=True, env=env, check=False
+        ).returncode
+        == 0
+    ):
         return True, ""
     command = shutil.which("hyprpaper")
     if not command:
         return False, "hyprpaper is not installed"
     try:
-        subprocess.Popen([command], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+        subprocess.Popen(
+            [command], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env
+        )
     except OSError as exc:
         return False, f"could not start hyprpaper: {exc}"
     for _ in range(20):
         time.sleep(0.1)
-        if subprocess.run(probe, text=True, capture_output=True, env=env).returncode == 0:
+        if (
+            subprocess.run(
+                probe, text=True, capture_output=True, env=env, check=False
+            ).returncode
+            == 0
+        ):
             return True, ""
     return False, "hyprpaper did not create its IPC socket"
 
@@ -366,12 +515,17 @@ def apply_wallpaper_path(path: Path | str) -> str:
     for monitor in monitors:
         proc = subprocess.run(
             [hyprctl, "hyprpaper", "wallpaper", f"{monitor},{path},cover"],
-            text=True, capture_output=True, env=env,
+            text=True,
+            capture_output=True,
+            env=env,
+            check=False,
         )
         message = (proc.stdout or proc.stderr or "").strip()
         if proc.returncode != 0:
             label = monitor or "fallback"
-            raise RuntimeError(f"hyprpaper live switch failed for {label}: {message or f'exit {proc.returncode}'}")
+            raise RuntimeError(
+                f"hyprpaper live switch failed for {label}: {message or f'exit {proc.returncode}'}"
+            )
     _publish_current_wallpaper(path)
     return ", ".join(monitors) + ": " + str(path)
 
@@ -478,7 +632,9 @@ def _sync_starship_runtime(theme: dict[str, Any]) -> tuple[bool, str]:
     out: list[str] = []
     in_palette = False
     changed = False
-    pattern = re.compile(r'^(\s*)([A-Za-z0-9_-]+)(\s*=\s*)["\']#?[0-9A-Fa-f]{6}["\'](.*)$')
+    pattern = re.compile(
+        r'^(\s*)([A-Za-z0-9_-]+)(\s*=\s*)["\']#?[0-9A-Fa-f]{6}["\'](.*)$'
+    )
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("[palettes."):
@@ -505,15 +661,20 @@ def _sync_noctalia(name: str) -> tuple[bool, str]:
     if not command:
         return False, ""
     try:
-        proc = subprocess.run(command + ["apply", name], text=True, capture_output=True)
+        proc = subprocess.run(
+            command + ["apply", name], text=True, capture_output=True, check=False
+        )
     except OSError as exc:
         return False, f"Noctalia sync skipped: {exc}"
     message = (proc.stdout or proc.stderr or "").strip()
     return proc.returncode == 0, message
 
 
-def apply_studio_overrides(name: str, *, components: list[str] | None = None) -> dict[str, Any]:
+def apply_studio_overrides(
+    name: str, *, components: list[str] | None = None
+) -> dict[str, Any]:
     theme = load_theme(name)
+    _write_live_contract(theme, name)
     component_result = apply_all(theme, components)
     hypr_ok, hypr_message = _reload_hyprland()
     wallpaper_ok, wallpaper_message = _apply_static_wallpaper(name)
@@ -532,9 +693,12 @@ def apply_studio_overrides(name: str, *, components: list[str] | None = None) ->
 
 def apply_theme(name: str, *, components: list[str] | None = None) -> dict[str, Any]:
     theme = load_theme(name)
+    theme_ui.load_profile(theme_ui.resolved_name(theme)[0])
     legacy_ok, legacy_message = _run_legacy(name)
     if not legacy_ok:
-        raise RuntimeError(f"legacy theme generator failed for {name}: {legacy_message or 'no error output'}")
+        raise RuntimeError(
+            f"legacy theme generator failed for {name}: {legacy_message or 'no error output'}"
+        )
     # The currently running Arch-WM configuration imports this Lua contract,
     # not the compatibility theme.conf produced by the older generator.
     _write_live_contract(theme, name)
@@ -546,6 +710,8 @@ def apply_theme(name: str, *, components: list[str] | None = None) -> dict[str, 
     hypr_ok, hypr_message = _reload_hyprland()
     static_wallpaper_ok, static_wallpaper_message = _apply_static_wallpaper(name)
     starship_ok, starship_message = _sync_starship_runtime(theme)
+
+    theme_ui.publish(theme, name)
 
     ACTIVE_FILE.parent.mkdir(parents=True, exist_ok=True)
     ACTIVE_FILE.write_text(name + "\n", encoding="utf-8")
@@ -571,8 +737,10 @@ def preview_theme(data: dict[str, Any], reason: str = "Preview") -> dict[str, An
     # contracts, reload the compositor, and do not invoke the legacy command,
     # change the saved theme, or touch wallpapers.
     theme = ensure_theme_schema(data)
+    theme_ui.load_profile(theme_ui.resolved_name(theme)[0])
     write_preview(theme)
-    _write_live_contract(theme, PREVIEW_NAME)
+    _write_live_contract(theme, PREVIEW_NAME, preview=True)
+    theme_ui.publish(theme, str(theme.get("name") or ""))
     hypr_ok, hypr_message = _reload_hyprland()
     if not hypr_ok and hypr_message:
         raise RuntimeError(hypr_message)
