@@ -97,10 +97,10 @@ def test_manual_preview_updates_contracts_and_cancel_restores_saved_theme(
         assert instance is not None, [error.toString() for error in component.errors()]
         if slider_name:
             window = QQuickWindow()
-            window.resize(1000, 800)
+            window.resize(1000, 1200)
             instance.setParentItem(window.contentItem())
             instance.setWidth(1000)
-            instance.setHeight(800)
+            instance.setHeight(1200)
             window.show()
             QTest.qWait(100)
             items = [instance]
