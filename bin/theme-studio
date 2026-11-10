@@ -1,25 +1,36 @@
 #!/usr/bin/env python3
 """Installed `theme` command: Theme Studio UI plus backward-compatible CLI."""
+
 from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 import theme_runtime
 import theme_ui
-from theme_schema import validation_summary, validate_theme
+from theme_schema import validate_theme, validation_summary
 from theme_starship import (
     STYLE_DESCRIPTIONS,
     STYLE_NAMES,
+)
+from theme_starship import (
     apply_style as apply_starship_style,
+)
+from theme_starship import (
     normalize_style as normalize_starship_style,
+)
+from theme_starship import (
     profile as starship_profile,
+)
+from theme_starship import (
     render as render_starship,
+)
+from theme_starship import (
     save as save_starship_profile,
 )
 
@@ -41,6 +52,7 @@ Compatible commands:
   theme shape ...           Existing shape commands
   theme texture ...         Existing texture commands
   theme anim ...            Existing animation commands
+  theme motion-profile NAME Apply performance, balanced, or cinematic to the active theme
   theme homepage ...        Existing homepage commands
   theme font ...            Existing font commands
   theme wallpaper ...       Semantic wallpaper template commands
@@ -71,7 +83,10 @@ Studio utilities:
 def run_legacy(args: list[str]) -> int:
     command = theme_runtime.legacy_command()
     if not command:
-        print("theme: legacy generator was not found. Re-run the themes installer.", file=sys.stderr)
+        print(
+            "theme: legacy generator was not found. Re-run the themes installer.",
+            file=sys.stderr,
+        )
         return 127
     return subprocess.call(command + args)
 
@@ -177,7 +192,12 @@ def _sync_hypr_lua(name: str) -> None:
         "})",
     ]
 
-    output = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "hypr" / "generated" / "theme.lua"
+    output = (
+        Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        / "hypr"
+        / "generated"
+        / "theme.lua"
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=".theme.lua.", dir=output.parent, text=True)
     tmp = Path(temporary)
@@ -204,12 +224,15 @@ def wallgen_command() -> list[str] | None:
 def wallpaper(args: list[str]) -> int:
     command = wallgen_command()
     if not command:
-        print("theme wallpaper: wallgen was not found. Re-run the themes installer.", file=sys.stderr)
+        print(
+            "theme wallpaper: wallgen was not found. Re-run the themes installer.",
+            file=sys.stderr,
+        )
         return 127
     forwarded = list(args)
     if forwarded and forwarded[0] in ("-l", "--list"):
         forwarded[0] = "list"
-    proc = subprocess.run(command + ["semantic"] + forwarded)
+    proc = subprocess.run(command + ["semantic"] + forwarded, check=False)
     if proc.returncode != 0:
         return proc.returncode
     changes_selection = bool(forwarded) and (
@@ -222,8 +245,18 @@ def wallpaper(args: list[str]) -> int:
             try:
                 _sync_hypr_lua(current)
                 theme_runtime.apply_theme(current)
-            except Exception as exc:
-                print(f"theme wallpaper: imported/selected, but live apply failed: {exc}", file=sys.stderr)
+            except (
+                OSError,
+                ValueError,
+                TypeError,
+                KeyError,
+                RuntimeError,
+                subprocess.SubprocessError,
+            ) as exc:
+                print(
+                    f"theme wallpaper: imported/selected, but live apply failed: {exc}",
+                    file=sys.stderr,
+                )
                 return 1
     return 0
 
@@ -263,7 +296,14 @@ def _sync_starship_runtime_only() -> None:
         sync = getattr(theme_runtime, "_sync_starship_runtime", None)
         if sync:
             sync(theme)
-    except Exception as exc:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        RuntimeError,
+        subprocess.SubprocessError,
+    ) as exc:
         print(f"theme starship: runtime mirror warning: {exc}", file=sys.stderr)
 
 
@@ -316,11 +356,15 @@ def starship(args: list[str]) -> int:
         roles = dict(theme.get("roles", {}))
         if not roles:
             raise ValueError(f"theme '{theme_name}' has no roles")
-        cfg = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()
+        cfg = Path(
+            os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
+        ).expanduser()
         output = cfg / "starship.toml"
         output.parent.mkdir(parents=True, exist_ok=True)
         rendered = render_starship(roles, values)
-        fd, temporary = tempfile.mkstemp(prefix=".starship.", suffix=".tmp", dir=output.parent, text=True)
+        fd, temporary = tempfile.mkstemp(
+            prefix=".starship.", suffix=".tmp", dir=output.parent, text=True
+        )
         temporary_path = Path(temporary)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -330,7 +374,14 @@ def starship(args: list[str]) -> int:
             os.replace(temporary_path, output)
         finally:
             temporary_path.unlink(missing_ok=True)
-    except Exception as exc:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        RuntimeError,
+        subprocess.SubprocessError,
+    ) as exc:
         print(f"theme starship: {exc}", file=sys.stderr)
         return 1
 
@@ -377,13 +428,26 @@ def launch_tui(name: str | None = None) -> int:
     if name:
         os.environ["THEME_STUDIO_THEME"] = name
     try:
+        import curses
+    except ImportError:
+        return run_legacy([])
+    try:
         _enable_live_preview_by_default()
         from theme_tui import launch as launch_tui
+
         launch_tui()
         return 0
     except KeyboardInterrupt:
         return 130
-    except Exception as exc:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        RuntimeError,
+        subprocess.SubprocessError,
+        curses.error,
+    ) as exc:
         print(f"theme: Theme Studio could not start: {exc}", file=sys.stderr)
         print("Falling back to the classic picker.", file=sys.stderr)
         return run_legacy([])
@@ -392,8 +456,11 @@ def launch_tui(name: str | None = None) -> int:
 def _python_has_pyside(python: str) -> bool:
     try:
         proc = subprocess.run(
-            [python, "-c", "import PySide6"], stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, timeout=8,
+            [python, "-c", "import PySide6"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=8,
+            check=False,
         )
         return proc.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
@@ -404,9 +471,15 @@ def _qt_python() -> str | None:
     explicit = os.environ.get("THEME_STUDIO_QT_PYTHON")
     if explicit and _python_has_pyside(explicit):
         return explicit
-    venv = Path(os.environ.get(
-        "THEME_STUDIO_QT_VENV", Path.home() / ".local/share/theme-studio/qt-venv"
-    )) / "bin/python"
+    venv = (
+        Path(
+            os.environ.get(
+                "THEME_STUDIO_QT_VENV",
+                Path.home() / ".local/share/theme-studio/qt-venv",
+            )
+        )
+        / "bin/python"
+    )
     if venv.exists() and _python_has_pyside(str(venv)):
         return str(venv)
     return sys.executable if _python_has_pyside(sys.executable) else None
@@ -418,7 +491,9 @@ def launch_qt(name: str | None = None) -> int | None:
         return None
     app = Path(__file__).resolve().with_name("theme_qt_app.py")
     if not app.exists():
-        print("theme: Qt frontend files are missing; re-run install.sh.", file=sys.stderr)
+        print(
+            "theme: Qt frontend files are missing; re-run install.sh.", file=sys.stderr
+        )
         return 2
     command = [python, str(app)]
     if name:
@@ -435,9 +510,15 @@ def launch(name: str | None = None, *, frontend: str = "auto") -> int:
         if code is not None:
             if code == 0 or frontend == "qt":
                 return code
-            print(f"theme: Qt frontend exited with status {code}; using TUI fallback.", file=sys.stderr)
+            print(
+                f"theme: Qt frontend exited with status {code}; using TUI fallback.",
+                file=sys.stderr,
+            )
         elif frontend == "qt":
-            print("theme: PySide6 is not available. Run: theme qt-install", file=sys.stderr)
+            print(
+                "theme: PySide6 is not available. Run: theme qt-install",
+                file=sys.stderr,
+            )
             return 127
     return launch_tui(name)
 
@@ -457,7 +538,7 @@ def validate(name: str | None) -> int:
         return 2
     try:
         theme = theme_runtime.load_theme(target)
-    except Exception as exc:
+    except (OSError, ValueError, TypeError) as exc:
         print(f"theme validate: {exc}", file=sys.stderr)
         return 2
     issues = validate_theme(theme)
@@ -475,15 +556,8 @@ def _active_theme_data() -> tuple[str | None, dict | None]:
         return None, None
     try:
         return name, theme_runtime.load_theme(name)
-    except Exception:
+    except (OSError, ValueError, TypeError):
         return name, None
-
-
-def _publish_ui_style(name: str, theme: dict) -> None:
-    try:
-        theme_ui.publish(theme, name)
-    except Exception as exc:
-        print(f"theme: UI-style warning: {exc}", file=sys.stderr)
 
 
 def main() -> int:
@@ -506,9 +580,13 @@ def main() -> int:
     if args[0] == "edit":
         return launch(args[1] if len(args) > 1 else theme_runtime.active_theme())
     if args[0] == "qt":
-        return launch(args[1] if len(args) > 1 else theme_runtime.active_theme(), frontend="qt")
+        return launch(
+            args[1] if len(args) > 1 else theme_runtime.active_theme(), frontend="qt"
+        )
     if args[0] == "tui":
-        return launch(args[1] if len(args) > 1 else theme_runtime.active_theme(), frontend="tui")
+        return launch(
+            args[1] if len(args) > 1 else theme_runtime.active_theme(), frontend="tui"
+        )
     if args[0] == "qt-install":
         return install_qt_runtime()
     if args[0] == "validate":
@@ -523,33 +601,94 @@ def main() -> int:
         name, theme = _active_theme_data()
         try:
             return theme_ui.command(args[1:], theme, name)
-        except Exception as exc:
+        except (OSError, ValueError, TypeError) as exc:
             print(f"theme ui: {exc}", file=sys.stderr)
             return 2
+    if args[0] == "motion-profile":
+        import theme_effects
+        from theme_editor import ThemeEditor
+        from theme_motion import EFFECT_PROFILES
+        from theme_schema import apply_mapping
 
-    passthrough = {"shape", "texture", "anim", "effects", "homepage", "font", "-l", "--list"}
+        if len(args) != 2 or args[1] not in EFFECT_PROFILES:
+            print(
+                "usage: theme motion-profile performance|balanced|cinematic",
+                file=sys.stderr,
+            )
+            return 2
+        name = theme_runtime.active_theme()
+        if not name:
+            print("theme motion-profile: no active theme", file=sys.stderr)
+            return 1
+        try:
+            editor = ThemeEditor(name, theme_dir=theme_runtime.THEME_DIR)
+            editor.mutate(
+                f"Apply {args[1]} motion profile",
+                lambda draft: apply_mapping(draft, EFFECT_PROFILES[args[1]]),
+                preview=False,
+            )
+            editor.save(apply=False)
+            theme_effects.save_anim(None)
+            theme_effects.save_texture(None)
+            theme_runtime.apply_saved_theme(name)
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(f"theme motion-profile: {exc}", file=sys.stderr)
+            return 1
+        print(f"Applied {args[1]} motion profile to {name}")
+        return 0
+
+    passthrough = {
+        "shape",
+        "texture",
+        "anim",
+        "effects",
+        "homepage",
+        "font",
+        "-l",
+        "--list",
+    }
     if args[0] in passthrough or args[0].startswith("-"):
         code = run_legacy(args)
-        if code == 0 and args[0] in {"shape", "texture", "anim", "effects", "homepage", "font"}:
+        if code == 0 and args[0] in {
+            "shape",
+            "texture",
+            "anim",
+            "effects",
+            "homepage",
+            "font",
+        }:
             current = theme_runtime.active_theme()
             if current:
                 try:
                     if args[0] in {"shape", "texture", "anim", "effects"}:
                         _sync_hypr_lua(current)
                     theme_runtime.apply_studio_overrides(current)
-                except Exception as exc:
+                except (
+                    OSError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    RuntimeError,
+                    subprocess.SubprocessError,
+                ) as exc:
                     print(f"theme: Studio override warning: {exc}", file=sys.stderr)
         return code
 
     try:
         _sync_hypr_lua(args[0])
         result = theme_runtime.apply_theme(args[0])
-    except Exception as exc:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        RuntimeError,
+        subprocess.SubprocessError,
+    ) as exc:
         print(f"theme: {exc}", file=sys.stderr)
         return 1
     if result.get("legacy_message"):
         print(result["legacy_message"])
-    _publish_ui_style(args[0], theme_runtime.load_theme(args[0]))
     print(f"Theme Studio overrides applied: {args[0]}")
     return 0
 

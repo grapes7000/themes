@@ -16,6 +16,9 @@ sys.modules.setdefault("theme_components", components)
 schema = types.ModuleType("theme_schema")
 schema.dump_json = lambda _data: "{}"
 schema.ensure_theme_schema = lambda data: data
+schema.role_color = lambda theme, role, fallback="#ffffff": theme.get(
+    "roles", {}
+).get(role, fallback)
 schema.safe_theme_name = lambda name: name
 sys.modules.setdefault("theme_schema", schema)
 

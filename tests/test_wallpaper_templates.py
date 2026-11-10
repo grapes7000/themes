@@ -3,16 +3,39 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-LOADER = importlib.machinery.SourceFileLoader("wallgen_semantic", str(ROOT / "bin" / "wallgen"))
+LOADER = importlib.machinery.SourceFileLoader(
+    "wallgen_semantic", str(ROOT / "bin" / "wallgen")
+)
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 wallgen = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
 LOADER.exec_module(wallgen)
+
+
+def test_help_exits_without_generating_wallpapers(tmp_path):
+    themes = tmp_path / "hypr" / "themes"
+    themes.mkdir(parents=True)
+    (themes / "example.json").write_text("{}", encoding="utf-8")
+
+    for option in ("-h", "--help"):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "bin" / "wallgen"), option],
+            env={**os.environ, "XDG_CONFIG_HOME": str(tmp_path)},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert "wallgen semantic" in result.stdout
+        assert not (tmp_path / "hypr" / "wallpapers").exists()
 
 
 def configure(monkeypatch, tmp_path):
@@ -22,8 +45,12 @@ def configure(monkeypatch, tmp_path):
     monkeypatch.setattr(wallgen, "CACHE", cache)
     monkeypatch.setattr(wallgen, "THEME_DIR", cfg / "hypr" / "themes")
     monkeypatch.setattr(wallgen, "WALL_DIR", cfg / "hypr" / "wallpapers")
-    monkeypatch.setattr(wallgen, "TEMPLATE_ROOT", cfg / "theme-engine" / "wallpaper-templates")
-    monkeypatch.setattr(wallgen, "ACTIVE_TEMPLATE_FILE", cfg / "theme-engine" / "wallpaper-template")
+    monkeypatch.setattr(
+        wallgen, "TEMPLATE_ROOT", cfg / "theme-engine" / "wallpaper-templates"
+    )
+    monkeypatch.setattr(
+        wallgen, "ACTIVE_TEMPLATE_FILE", cfg / "theme-engine" / "wallpaper-template"
+    )
     monkeypatch.setattr(wallgen, "RENDER_ROOT", cache / "theme-engine" / "wallpapers")
     return cfg, cache
 
@@ -32,16 +59,21 @@ def write_template(cfg: Path, image: Image.Image, name="sample"):
     root = cfg / "theme-engine" / "wallpaper-templates" / name
     root.mkdir(parents=True)
     image.save(root / "source.png")
-    (root / "template.json").write_text(json.dumps({
-        "version": 1,
-        "name": name,
-        "source": "source.png",
-        "regions": [
-            {"source": "#282828", "role": "bg"},
-            {"source": "#cc241d", "role": "ansi_red"},
-        ],
-        "render": {"max_blend_error": 14.0},
-    }), encoding="utf-8")
+    (root / "template.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "name": name,
+                "source": "source.png",
+                "regions": [
+                    {"source": "#282828", "role": "bg"},
+                    {"source": "#cc241d", "role": "ansi_red"},
+                ],
+                "render": {"max_blend_error": 14.0},
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_arch_palette_suggestions():
@@ -77,7 +109,12 @@ def test_render_recolors_flat_anchors_and_edge_blend(monkeypatch, tmp_path):
     source = Image.new("RGBA", (3, 1))
     source.putdata([(40, 40, 40, 255), (122, 38, 34, 255), (204, 36, 29, 255)])
     write_template(cfg, source)
-    roles = {"bg": "#2e3440", "ansi_red": "#bf616a", "accent": "#88c0d0", "text": "#eceff4"}
+    roles = {
+        "bg": "#2e3440",
+        "ansi_red": "#bf616a",
+        "accent": "#88c0d0",
+        "text": "#eceff4",
+    }
     out = wallgen.render_template("sample", "nord", roles)
     assert out == cache / "theme-engine" / "wallpapers" / "sample" / "nord.png"
     pixels = list(Image.open(out).convert("RGB").getdata())
@@ -87,10 +124,26 @@ def test_render_recolors_flat_anchors_and_edge_blend(monkeypatch, tmp_path):
 
 
 def test_role_fallbacks():
-    roles = {"bg": "#000000", "text": "#ffffff", "accent": "#ff00ff", "accent2": "#00ffff", "urgent": "#ff0000"}
+    roles = {
+        "bg": "#000000",
+        "text": "#ffffff",
+        "accent": "#ff00ff",
+        "accent2": "#00ffff",
+        "urgent": "#ff0000",
+    }
     assert wallgen.resolve_role(roles, "ansi_red") == "#ff0000"
     assert wallgen.resolve_role(roles, "ansi_green") == "#00ffff"
     assert wallgen.resolve_role(roles, "ansi_blue") == "#00ffff"
+
+
+def test_wallgen_interruption_exits_without_a_traceback(monkeypatch, capsys):
+    def interrupt(_argv):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(sys, "argv", ["wallgen"])
+    monkeypatch.setattr(wallgen, "classic_main", interrupt)
+    assert wallgen.main() == 130
+    assert capsys.readouterr().err == "wallgen: interrupted\n"
 
 
 def test_import_and_activate(monkeypatch, tmp_path):
@@ -101,7 +154,9 @@ def test_import_and_activate(monkeypatch, tmp_path):
         for y in range(10):
             image.putpixel((x, y), (204, 36, 29))
     image.save(source)
-    payload = wallgen.import_template(source, "My Template", min_percent=1.0, accept_suggestions=True)
+    payload = wallgen.import_template(
+        source, "My Template", min_percent=1.0, accept_suggestions=True
+    )
     assert payload["name"] == "my-template"
     assert wallgen.active_template() == "my-template"
     root = cfg / "theme-engine" / "wallpaper-templates" / "my-template"
@@ -113,16 +168,21 @@ def test_import_and_activate(monkeypatch, tmp_path):
 
 
 def test_builtin_materializes_from_installed_wallpaper(monkeypatch, tmp_path):
-    cfg, _ = configure(monkeypatch, tmp_path)
+    _cfg, _ = configure(monkeypatch, tmp_path)
     wallgen.WALL_DIR.mkdir(parents=True)
     source = Image.new("RGB", (2, 1), "#282828")
     source.putpixel((1, 0), (235, 219, 178))
     source.save(wallgen.WALL_DIR / "arch-retro-source.png")
     wallgen.set_active_template("arch-retro")
     assert wallgen.active_template() == "arch-retro"
-    template = json.loads((wallgen.TEMPLATE_ROOT / "arch-retro" / "template.json").read_text())
+    template = json.loads(
+        (wallgen.TEMPLATE_ROOT / "arch-retro" / "template.json").read_text()
+    )
     assert template["builtin"] is True
-    assert any(region == {"source": "#458588", "role": "ansi_blue"} for region in template["regions"])
+    assert any(
+        region == {"source": "#458588", "role": "ansi_blue"}
+        for region in template["regions"]
+    )
 
 
 def test_none_keeps_classic_wallpaper(monkeypatch, tmp_path):

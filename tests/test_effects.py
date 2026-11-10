@@ -12,7 +12,6 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bin"))
 import theme_effects
 
-
 SAMPLE_STYLE = {
     "corner_radius": 14,
     "opacity": 0.94,
@@ -46,15 +45,38 @@ SAMPLE_ROLES = {
 
 # ── Axis names ────────────────────────────────────────────────────────
 
+
 class TestAxisNames:
     def test_shapes_exist(self):
-        assert set(theme_effects.list_shapes()) == {"uniform-8", "sharp", "rounded", "pillowy", "boxy"}
+        assert set(theme_effects.list_shapes()) == {
+            "uniform-8",
+            "sharp",
+            "rounded",
+            "pillowy",
+            "boxy",
+        }
 
     def test_textures_exist(self):
-        assert set(theme_effects.list_textures()) == {"clear", "frosted", "glaze", "haze", "bloom"}
+        assert set(theme_effects.list_textures()) == {
+            "clear",
+            "frosted",
+            "glaze",
+            "haze",
+            "bloom",
+        }
 
     def test_anims_exist(self):
-        assert set(theme_effects.list_anims()) == {"none", "subtle", "smooth", "snappy", "bouncy", "dramatic", "glitch"}
+        assert set(theme_effects.list_anims()) == {
+            "none",
+            "subtle",
+            "smooth",
+            "snappy",
+            "bouncy",
+            "dramatic",
+            "glitch",
+            "custom",
+            "spring",
+        }
 
     def test_validate_shape(self):
         for name in theme_effects.list_shapes():
@@ -85,6 +107,7 @@ class TestBackCompatNames:
 
 
 # ── Resolve ───────────────────────────────────────────────────────────
+
 
 class TestResolve:
     def test_none_passthrough(self):
@@ -137,6 +160,7 @@ class TestResolve:
 
 # ── Render animations ────────────────────────────────────────────────
 
+
 class TestRenderAnimations:
     def test_none_returns_empty(self):
         result = theme_effects.render_animations(None)
@@ -180,6 +204,7 @@ class TestRenderAnimations:
 
 
 # ── Profile persistence ──────────────────────────────────────────────
+
 
 class TestProfileRoundtrip:
     def test_save_and_load_texture(self, tmp_path, monkeypatch):
@@ -248,12 +273,14 @@ class TestProfileRoundtrip:
 
 # ── gen_hypr integration ─────────────────────────────────────────────
 
+
 class TestGenHyprIntegration:
     """Test that gen_hypr produces correct output with and without effects."""
 
     @staticmethod
     def _load_theme_module():
         import importlib.util
+
         theme_path = os.path.join(os.path.dirname(__file__), "..", "bin", "theme")
         loader = importlib.util.spec_from_loader(
             "theme_main",
@@ -263,8 +290,9 @@ class TestGenHyprIntegration:
         loader.loader.exec_module(mod)
         return mod
 
-    def _gen_hypr_output(self, roles, style,
-                         shape_name=None, texture_name=None, anim_name=None):
+    def _gen_hypr_output(
+        self, roles, style, shape_name=None, texture_name=None, anim_name=None
+    ):
         mod = self._load_theme_module()
         captured = {}
 
@@ -287,26 +315,24 @@ class TestGenHyprIntegration:
         assert "dim_inactive" in output
 
     def test_with_smooth_anim(self):
-        output = self._gen_hypr_output(SAMPLE_ROLES, SAMPLE_STYLE,
-                                       anim_name="smooth")
+        output = self._gen_hypr_output(SAMPLE_ROLES, SAMPLE_STYLE, anim_name="smooth")
         assert "animations {" in output
         assert "enabled = true" in output
         assert "windowsIn" in output
 
     def test_with_none_anim(self):
-        output = self._gen_hypr_output(SAMPLE_ROLES, SAMPLE_STYLE,
-                                       anim_name="none")
+        output = self._gen_hypr_output(SAMPLE_ROLES, SAMPLE_STYLE, anim_name="none")
         assert "animations {" in output
         assert "enabled = false" in output
 
     def test_with_texture(self):
-        output = self._gen_hypr_output(SAMPLE_ROLES, SAMPLE_STYLE,
-                                       texture_name="frosted")
+        output = self._gen_hypr_output(
+            SAMPLE_ROLES, SAMPLE_STYLE, texture_name="frosted"
+        )
         assert "blur" in output
 
     def test_semantic_roles_in_output(self):
-        output = self._gen_hypr_output(SAMPLE_ROLES, SAMPLE_STYLE,
-                                       anim_name="smooth")
+        output = self._gen_hypr_output(SAMPLE_ROLES, SAMPLE_STYLE, anim_name="smooth")
         assert "cba6f7" in output
         assert "89b4fa" in output
         assert "313244" in output
@@ -316,8 +342,7 @@ class TestGenHyprIntegration:
         alt_roles["focus"] = "#ff0000"
         alt_roles["accent2"] = "#00ff00"
         alt_roles["border_normal"] = "#0000ff"
-        output = self._gen_hypr_output(alt_roles, SAMPLE_STYLE,
-                                       anim_name="smooth")
+        output = self._gen_hypr_output(alt_roles, SAMPLE_STYLE, anim_name="smooth")
         assert "ff0000" in output
         assert "00ff00" in output
         assert "0000ff" in output

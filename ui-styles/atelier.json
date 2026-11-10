@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "name": "atelier",
+  "description": "Clean workstation UI: restrained spacing, thin geometry, quiet controls, layered surfaces and subtle motion.",
+  "metrics": {
+    "grid": 4, "spacing_xs": 4, "spacing_sm": 8, "spacing_md": 12, "spacing_lg": 16, "spacing_xl": 24, "spacing_2xl": 32, "spacing_3xl": 40,
+    "page_padding": 22, "page_padding_compact": 16, "section_gap": 22,
+    "control_height_compact": 26, "control_height": 32, "control_height_large": 40,
+    "sidebar_width": 200, "icon_size": 15, "icon_box": 18,
+    "radius_control": 5, "radius_surface": 7, "radius_overlay": 11,
+    "border_width": 1, "focus_width": 1,
+    "font_caption": 11, "font_secondary": 12, "font_body": 13, "font_section": 14, "font_title": 17
+  },
+  "patterns": {
+    "surface": "flat", "section": "divider", "list_row": "flat", "selection": "accent-soft-marker", "button": "quiet", "field": "outlined", "dialog": "elevated", "status": "semantic-muted", "shadow": "overlay-only", "motion": "restrained"
+  },
+  "rules": {"allow_local_spacing": false, "allow_local_radius": false, "allow_local_font_size": false, "allow_local_border_width": false, "allow_nested_cards": false}
+}

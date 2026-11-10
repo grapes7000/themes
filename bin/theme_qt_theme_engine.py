@@ -1,26 +1,91 @@
-#!/usr/bin/env python3
 """Expose the generated theme-engine contract to the Qt Theme Studio shell."""
+
 from __future__ import annotations
 
 import json
 import os
 import re
 from pathlib import Path
+from typing import Any
 
-from PySide6.QtCore import QFileSystemWatcher, QObject, Property, Signal, Slot
+from PySide6.QtCore import Property, QFileSystemWatcher, QObject, Signal, Slot
 
 CONTRACT_ENV = "QT_APP_THEME_CONTRACT"
-DEFAULT_CONTRACT = Path.home() / ".config" / "theme-engine" / "generated" / "theme.json"
+CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+DEFAULT_CONTRACT = CONFIG_DIR / "theme-engine" / "generated" / "theme.json"
 UI_STYLE_CONTRACT_ENV = "QT_APP_UI_STYLE_CONTRACT"
-DEFAULT_UI_STYLE_CONTRACT = Path.home() / ".config" / "theme-engine" / "generated" / "ui-style.json"
+DEFAULT_UI_STYLE_CONTRACT = CONFIG_DIR / "theme-engine" / "generated" / "ui-style.json"
 _HEX_RE = re.compile(r"^[0-9a-fA-F]{6}$")
 
 FALLBACK = {
-    "dark": {"bg": "#141319", "bgElevated": "#1B1A22", "surface": "#211F2A", "surfaceAlt": "#262432", "surfaceHover": "#2C2A3A", "surfaceActive": "#322F44", "border": "#33303F", "borderStrong": "#46415C", "textPrimary": "#ECE9F4", "textSecondary": "#A8A3BA", "textMuted": "#6F6A80", "accent": "#8B7CF8", "accentStrong": "#A294FB", "success": "#5FD38C", "warn": "#E9C46A", "danger": "#F2768A", "info": "#7CB8F8", "focusRing": "#A294FB", "selection": "#8B7CF8", "onAccent": "#14131A"},
-    "light": {"bg": "#F6F5FB", "bgElevated": "#FFFFFF", "surface": "#FFFFFF", "surfaceAlt": "#F1EFF7", "surfaceHover": "#E9E6F2", "surfaceActive": "#E0DCF0", "border": "#E2DFEE", "borderStrong": "#C8C2DE", "textPrimary": "#211F2A", "textSecondary": "#5C576E", "textMuted": "#8F8AA0", "accent": "#6C5CE7", "accentStrong": "#5748C9", "success": "#2F9E5F", "warn": "#B8860B", "danger": "#D64563", "info": "#2D7DD2", "focusRing": "#6C5CE7", "selection": "#6C5CE7", "onAccent": "#FFFFFF"},
+    "dark": {
+        "bg": "#141319",
+        "bgElevated": "#1B1A22",
+        "surface": "#211F2A",
+        "surfaceAlt": "#262432",
+        "surfaceHover": "#2C2A3A",
+        "surfaceActive": "#322F44",
+        "border": "#33303F",
+        "borderStrong": "#46415C",
+        "textPrimary": "#ECE9F4",
+        "textSecondary": "#A8A3BA",
+        "textMuted": "#6F6A80",
+        "accent": "#8B7CF8",
+        "accentStrong": "#A294FB",
+        "success": "#5FD38C",
+        "warn": "#E9C46A",
+        "danger": "#F2768A",
+        "info": "#7CB8F8",
+        "focusRing": "#A294FB",
+        "selection": "#8B7CF8",
+        "onAccent": "#14131A",
+    },
+    "light": {
+        "bg": "#F6F5FB",
+        "bgElevated": "#FFFFFF",
+        "surface": "#FFFFFF",
+        "surfaceAlt": "#F1EFF7",
+        "surfaceHover": "#E9E6F2",
+        "surfaceActive": "#E0DCF0",
+        "border": "#E2DFEE",
+        "borderStrong": "#C8C2DE",
+        "textPrimary": "#211F2A",
+        "textSecondary": "#5C576E",
+        "textMuted": "#8F8AA0",
+        "accent": "#6C5CE7",
+        "accentStrong": "#5748C9",
+        "success": "#2F9E5F",
+        "warn": "#B8860B",
+        "danger": "#D64563",
+        "info": "#2D7DD2",
+        "focusRing": "#6C5CE7",
+        "selection": "#6C5CE7",
+        "onAccent": "#FFFFFF",
+    },
 }
 
-ROLE_MAP = {"bg": ("bg",), "bgElevated": ("bg_alt",), "surface": ("surface_0", "overlay", "bg_alt"), "surfaceAlt": ("surface_1", "surface_0", "overlay"), "surfaceHover": ("hover", "surface_2", "surface_1"), "surfaceActive": ("focus", "hover", "surface_2"), "border": ("border_normal", "border_subtle"), "borderStrong": ("border_strong", "focus"), "textPrimary": ("text",), "textSecondary": ("text_dim", "text"), "textMuted": ("disabled", "text_dim"), "accent": ("accent", "focus"), "accentStrong": ("accent2", "accent"), "success": ("success", "ansi_green"), "warn": ("warning", "ansi_yellow"), "danger": ("urgent", "ansi_red"), "info": ("info", "ansi_blue"), "focusRing": ("focus", "accent"), "selection": ("sel_bg", "selected", "focus"), "onAccent": ("on_accent", "on_urgent")}
+ROLE_MAP = {
+    "bg": ("bg",),
+    "bgElevated": ("bg_alt",),
+    "surface": ("surface_0", "overlay", "bg_alt"),
+    "surfaceAlt": ("surface_1", "surface_0", "overlay"),
+    "surfaceHover": ("hover", "surface_2", "surface_1"),
+    "surfaceActive": ("focus", "hover", "surface_2"),
+    "border": ("border_normal", "border_subtle"),
+    "borderStrong": ("border_strong", "focus"),
+    "textPrimary": ("text",),
+    "textSecondary": ("text_dim", "text"),
+    "textMuted": ("disabled", "text_dim"),
+    "accent": ("accent", "focus"),
+    "accentStrong": ("accent2", "accent"),
+    "success": ("success", "ansi_green"),
+    "warn": ("warning", "ansi_yellow"),
+    "danger": ("urgent", "ansi_red"),
+    "info": ("info", "ansi_blue"),
+    "focusRing": ("focus", "accent"),
+    "selection": ("sel_bg", "selected", "focus"),
+    "onAccent": ("on_accent", "on_urgent"),
+}
 
 
 def _hex(value: object) -> str | None:
@@ -34,7 +99,7 @@ def _hex(value: object) -> str | None:
 
 def _rgb(value: str) -> tuple[int, int, int]:
     value = value.lstrip("#")
-    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
 
 
 def _blend(fg: str, bg: str, alpha: float) -> str:
@@ -48,10 +113,12 @@ def contract_path() -> Path:
 
 
 def ui_style_contract_path() -> Path:
-    return Path(os.environ.get(UI_STYLE_CONTRACT_ENV, DEFAULT_UI_STYLE_CONTRACT)).expanduser()
+    return Path(
+        os.environ.get(UI_STYLE_CONTRACT_ENV, DEFAULT_UI_STYLE_CONTRACT)
+    ).expanduser()
 
 
-def _read_object(path: Path) -> dict:
+def _read_object(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
         return value if isinstance(value, dict) else {}
@@ -59,13 +126,15 @@ def _read_object(path: Path) -> dict:
         return {}
 
 
-def resolve_contract(path: Path | None = None) -> dict:
+def resolve_contract(path: Path | None = None) -> dict[str, Any]:
     path = path or contract_path()
     data = _read_object(path)
     ui_style = _read_object(ui_style_contract_path())
     dark = bool(data.get("dark", True))
-    roles = data.get("roles") if isinstance(data.get("roles"), dict) else {}
-    style = data.get("style") if isinstance(data.get("style"), dict) else {}
+    raw_roles = data.get("roles")
+    raw_style = data.get("style")
+    roles = raw_roles if isinstance(raw_roles, dict) else {}
+    style = raw_style if isinstance(raw_style, dict) else {}
     palette = dict(FALLBACK["dark" if dark else "light"])
     for token, candidates in ROLE_MAP.items():
         for role in candidates:
@@ -85,9 +154,22 @@ def resolve_contract(path: Path | None = None) -> dict:
         r, g, b = _rgb(palette["accent"])
         luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
         palette["onAccent"] = "#000000" if luminance > 128 else "#FFFFFF"
-    metrics = ui_style.get("metrics") if isinstance(ui_style.get("metrics"), dict) else {}
-    patterns = ui_style.get("patterns") if isinstance(ui_style.get("patterns"), dict) else {}
-    return {"name": str(data.get("name") or "Built-in"), "dark": dark, "fontFamily": str(style.get("font_family") or ""), "colors": palette, "metrics": metrics, "patterns": patterns, "source": str(path), "connected": bool(data)}
+    metrics = (
+        ui_style.get("metrics") if isinstance(ui_style.get("metrics"), dict) else {}
+    )
+    patterns = (
+        ui_style.get("patterns") if isinstance(ui_style.get("patterns"), dict) else {}
+    )
+    return {
+        "name": str(data.get("name") or "Built-in"),
+        "dark": dark,
+        "fontFamily": str(style.get("font_family") or ""),
+        "colors": palette,
+        "metrics": metrics,
+        "patterns": patterns,
+        "source": str(path),
+        "connected": bool(data),
+    }
 
 
 class ThemeBridge(QObject):
@@ -132,23 +214,23 @@ class ThemeBridge(QObject):
         return self._state["dark"]
 
     @Property(str, notify=themeChanged)
-    def fontFamily(self) -> str:  # noqa: N802
+    def fontFamily(self) -> str:
         return self._state["fontFamily"]
 
     @Property(str, notify=themeChanged)
-    def colorsJson(self) -> str:  # noqa: N802
+    def colorsJson(self) -> str:
         return json.dumps(self._state["colors"])
 
     @Property(str, notify=themeChanged)
-    def uiMetricsJson(self) -> str:  # noqa: N802
+    def uiMetricsJson(self) -> str:
         return json.dumps(self._state["metrics"])
 
     @Property(str, notify=themeChanged)
-    def uiPatternsJson(self) -> str:  # noqa: N802
+    def uiPatternsJson(self) -> str:
         return json.dumps(self._state["patterns"])
 
     @Property(str, notify=themeChanged)
-    def sourcePath(self) -> str:  # noqa: N802
+    def sourcePath(self) -> str:
         return self._state["source"]
 
     @Property(bool, notify=themeChanged)

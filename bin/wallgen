@@ -18,6 +18,7 @@ A semantic template maps dominant source-image colors to Theme Engine roles
 (bg, text, ansi_blue, urgent, ...). The same artwork can then be recolored for
 any current or future theme. Pillow is the only dependency.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,8 +32,9 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -95,11 +97,13 @@ ROLE_FALLBACKS: dict[str, tuple[str, ...]] = {
 
 def hex2rgb(c: str) -> tuple[int, int, int]:
     c = c.lstrip("#")
-    return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
+    return tuple(int(c[i : i + 2], 16) for i in (0, 2, 4))
 
 
-def lerp(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
-    return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
+def lerp(
+    a: tuple[int, int, int], b: tuple[int, int, int], t: float
+) -> tuple[int, int, int]:
+    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
 def clamp(v: float, lo: int = 0, hi: int = 255) -> int:
@@ -123,13 +127,22 @@ def gradient_bg(top: tuple[int, int, int], bottom: tuple[int, int, int]) -> Imag
 
 
 def make_blob(name: str, roles: dict[str, str], dark: bool) -> Path:
-    rnd = random.Random(hash(name) & 0xffffffff)
+    rnd = random.Random(hash(name) & 0xFFFFFFFF)
     bg = hex2rgb(roles["bg"])
     bg2 = hex2rgb(roles.get("bg_alt", roles["bg"]))
     top = shade(bg, 0.04 if dark else -0.02)
     bottom = shade(bg2, -0.06 if dark else -0.03)
     base = gradient_bg(top, bottom).convert("RGBA")
-    picks = ["focus", "accent", "accent2", "ansi_blue", "ansi_magenta", "ansi_cyan", "ansi_green", "urgent"]
+    picks = [
+        "focus",
+        "accent",
+        "accent2",
+        "ansi_blue",
+        "ansi_magenta",
+        "ansi_cyan",
+        "ansi_green",
+        "urgent",
+    ]
     seen: set[str] = set()
     colors: list[tuple[int, int, int]] = []
     for key in picks:
@@ -147,13 +160,17 @@ def make_blob(name: str, roles: dict[str, str], dark: bool) -> Path:
         cy = rnd.randint(int(-H * 0.1), int(H * 1.1))
         alpha = rnd.randint(90, 165)
         layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        ImageDraw.Draw(layer).ellipse([cx - radius, cy - radius, cx + radius, cy + radius], fill=color + (alpha,))
+        ImageDraw.Draw(layer).ellipse(
+            [cx - radius, cy - radius, cx + radius, cy + radius], fill=color + (alpha,)
+        )
         layer = layer.filter(ImageFilter.GaussianBlur(radius * 0.42))
         blobs = Image.alpha_composite(blobs, layer)
     blobs = blobs.filter(ImageFilter.GaussianBlur(60))
     image = Image.alpha_composite(base, blobs)
     vignette = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(vignette).ellipse([-W * 0.25, -H * 0.25, W * 1.25, H * 1.25], fill=255)
+    ImageDraw.Draw(vignette).ellipse(
+        [-W * 0.25, -H * 0.25, W * 1.25, H * 1.25], fill=255
+    )
     vignette = vignette.filter(ImageFilter.GaussianBlur(300))
     dark_layer = Image.new("RGBA", (W, H), (0, 0, 0, 90 if dark else 40))
     image = Image.composite(image, Image.alpha_composite(image, dark_layer), vignette)
@@ -170,8 +187,10 @@ def load_theme(name: str) -> tuple[dict[str, str], bool]:
     data = json.loads(path.read_text(encoding="utf-8"))
     roles = data.get("roles")
     if not isinstance(roles, dict):
-        raise ValueError(f"theme '{name}' has no roles object")
-    return {str(k): str(v).lower() for k, v in roles.items() if isinstance(v, str)}, bool(data.get("dark", True))
+        raise TypeError(f"theme '{name}' has no roles object")
+    return {
+        str(k): str(v).lower() for k, v in roles.items() if isinstance(v, str)
+    }, bool(data.get("dark", True))
 
 
 def safe_name(value: str) -> str:
@@ -188,13 +207,15 @@ def normalize_hex(value: str) -> str:
 
 
 def color_hex(channels: Iterable[float]) -> str:
-    values = [max(0, min(255, int(round(value)))) for value in channels]
+    values = [max(0, min(255, round(value))) for value in channels]
     return "#" + "".join(f"{value:02x}" for value in values)
 
 
 def atomic_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix="." + path.name, suffix=".tmp", dir=path.parent)
+    fd, temporary = tempfile.mkstemp(
+        prefix="." + path.name, suffix=".tmp", dir=path.parent
+    )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
@@ -235,14 +256,28 @@ def materialize_builtin(name: str) -> bool:
     root.mkdir(parents=True, exist_ok=True)
     with Image.open(source) as opened:
         opened.convert("RGBA").save(root / "source.png", format="PNG", optimize=True)
-    atomic_json(root / "template.json", {"version": TEMPLATE_VERSION, "name": name, "source": "source.png", "regions": builtin["regions"], "render": {"preserve_antialiasing": True, "max_blend_error": 14.0}, "builtin": True})
+    atomic_json(
+        root / "template.json",
+        {
+            "version": TEMPLATE_VERSION,
+            "name": name,
+            "source": "source.png",
+            "regions": builtin["regions"],
+            "render": {"preserve_antialiasing": True, "max_blend_error": 14.0},
+            "builtin": True,
+        },
+    )
     return True
 
 
 def list_templates() -> list[str]:
     names = set(BUILTIN_TEMPLATES)
     if TEMPLATE_ROOT.exists():
-        names.update(path.name for path in TEMPLATE_ROOT.iterdir() if path.is_dir() and (path / "template.json").is_file())
+        names.update(
+            path.name
+            for path in TEMPLATE_ROOT.iterdir()
+            if path.is_dir() and (path / "template.json").is_file()
+        )
     return sorted(names)
 
 
@@ -251,7 +286,9 @@ def set_active_template(name: str | None) -> None:
         ACTIVE_TEMPLATE_FILE.unlink(missing_ok=True)
         return
     name = safe_name(name)
-    if not (user_template_path(name) / "template.json").exists() and not materialize_builtin(name):
+    if not (
+        user_template_path(name) / "template.json"
+    ).exists() and not materialize_builtin(name):
         raise ValueError(f"wallpaper template '{name}' does not exist")
     atomic_text(ACTIVE_TEMPLATE_FILE, name + "\n")
 
@@ -266,7 +303,9 @@ def load_template(name: str) -> dict[str, Any]:
     except FileNotFoundError as exc:
         raise ValueError(f"wallpaper template '{name}' does not exist") from exc
     except json.JSONDecodeError as exc:
-        raise ValueError(f"wallpaper template '{name}' has invalid JSON: {exc}") from exc
+        raise ValueError(
+            f"wallpaper template '{name}' has invalid JSON: {exc}"
+        ) from exc
     if not isinstance(payload, dict) or payload.get("version") != TEMPLATE_VERSION:
         raise ValueError(f"wallpaper template '{name}' uses an unsupported format")
     regions = payload.get("regions")
@@ -275,7 +314,7 @@ def load_template(name: str) -> dict[str, Any]:
     seen: set[str] = set()
     for region in regions:
         if not isinstance(region, dict):
-            raise ValueError(f"wallpaper template '{name}' has an invalid region")
+            raise TypeError(f"wallpaper template '{name}' has an invalid region")
         source = normalize_hex(region.get("source", ""))
         role = region.get("role")
         if not isinstance(role, str) or not role:
@@ -294,7 +333,9 @@ def resolve_role(roles: dict[str, str], role: str) -> str:
     raise ValueError(f"theme cannot resolve wallpaper role '{role}'")
 
 
-def discover_regions(image_path: Path, *, max_regions: int = 12, min_percent: float = 0.25) -> list[dict[str, Any]]:
+def discover_regions(
+    image_path: Path, *, max_regions: int = 12, min_percent: float = 0.25
+) -> list[dict[str, Any]]:
     with Image.open(image_path) as opened:
         image = opened.convert("RGBA")
         opaque = [(r, g, b) for r, g, b, alpha in image.getdata() if alpha > 0]
@@ -303,21 +344,43 @@ def discover_regions(image_path: Path, *, max_regions: int = 12, min_percent: fl
     total = len(opaque)
     counts = Counter(opaque)
     floor = max(1, math.ceil(total * min_percent / 100.0))
-    selected = [(color, count) for color, count in counts.most_common() if count >= floor][:max_regions]
+    selected = [
+        (color, count) for color, count in counts.most_common() if count >= floor
+    ][:max_regions]
     if len(selected) < 2:
         with Image.open(image_path) as opened:
             thumb = opened.convert("RGB")
             thumb.thumbnail((512, 512))
-            quant = thumb.quantize(colors=max(2, max_regions), method=Image.Quantize.MEDIANCUT).convert("RGB")
+            quant = thumb.quantize(
+                colors=max(2, max_regions), method=Image.Quantize.MEDIANCUT
+            ).convert("RGB")
             selected = Counter(quant.getdata()).most_common(max_regions)
         total = sum(count for _, count in selected) or 1
-    return [{"color": color_hex(color), "count": count, "percent": count * 100.0 / total} for color, count in selected]
+    return [
+        {"color": color_hex(color), "count": count, "percent": count * 100.0 / total}
+        for color, count in selected
+    ]
 
 
 def suggest_role(color: str, reference_roles: dict[str, str] | None = None) -> str:
     color = normalize_hex(color)
     if reference_roles:
-        priorities = ("bg", "bg_alt", "text", "text_dim", "ansi_red", "ansi_green", "ansi_yellow", "ansi_blue", "ansi_magenta", "ansi_cyan", "urgent", "accent", "accent2", "focus")
+        priorities = (
+            "bg",
+            "bg_alt",
+            "text",
+            "text_dim",
+            "ansi_red",
+            "ansi_green",
+            "ansi_yellow",
+            "ansi_blue",
+            "ansi_magenta",
+            "ansi_cyan",
+            "urgent",
+            "accent",
+            "accent2",
+            "focus",
+        )
         for role in priorities:
             if reference_roles.get(role, "").lower() == color:
                 return role
@@ -345,7 +408,9 @@ def suggest_role(color: str, reference_roles: dict[str, str] | None = None) -> s
     return "ansi_magenta"
 
 
-def pair_projection(pixel: tuple[int, int, int], anchors: list[tuple[int, int, int]]) -> tuple[int, int, float, float]:
+def pair_projection(
+    pixel: tuple[int, int, int], anchors: list[tuple[int, int, int]]
+) -> tuple[int, int, float, float]:
     px = tuple(float(value) for value in pixel)
     best = (0, 0, 0.0, float("inf"))
     for first in range(len(anchors)):
@@ -365,14 +430,21 @@ def pair_projection(pixel: tuple[int, int, int], anchors: list[tuple[int, int, i
     return best
 
 
-def transform_color(pixel: tuple[int, int, int], source: list[tuple[int, int, int]], target: list[tuple[int, int, int]], max_error: float) -> tuple[int, int, int]:
+def transform_color(
+    pixel: tuple[int, int, int],
+    source: list[tuple[int, int, int]],
+    target: list[tuple[int, int, int]],
+    max_error: float,
+) -> tuple[int, int, int]:
     for index, anchor in enumerate(source):
         if pixel == anchor:
             return target[index]
     first, second, amount, error = pair_projection(pixel, source)
     if error <= max_error:
         a, b = target[first], target[second]
-        return tuple(max(0, min(255, round(a[i] + (b[i] - a[i]) * amount))) for i in range(3))
+        return tuple(
+            max(0, min(255, round(a[i] + (b[i] - a[i]) * amount))) for i in range(3)
+        )
     return pixel
 
 
@@ -381,9 +453,13 @@ def render_template(template_name: str, theme_name: str, roles: dict[str, str]) 
     root = user_template_path(template_name)
     source_path = root / str(payload.get("source", "source.png"))
     if not source_path.is_file():
-        raise ValueError(f"wallpaper template '{template_name}' is missing {source_path.name}")
+        raise ValueError(
+            f"wallpaper template '{template_name}' is missing {source_path.name}"
+        )
     source_anchors = [hex2rgb(region["source"]) for region in payload["regions"]]
-    target_anchors = [hex2rgb(resolve_role(roles, region["role"])) for region in payload["regions"]]
+    target_anchors = [
+        hex2rgb(resolve_role(roles, region["role"])) for region in payload["regions"]
+    ]
     max_error = float(payload.get("render", {}).get("max_blend_error", 14.0))
     with Image.open(source_path) as opened:
         image = opened.convert("RGBA")
@@ -393,7 +469,9 @@ def render_template(template_name: str, theme_name: str, roles: dict[str, str]) 
             if alpha == 0:
                 mapping[(red, green, blue, alpha)] = (red, green, blue, alpha)
             else:
-                nr, ng, nb = transform_color((red, green, blue), source_anchors, target_anchors, max_error)
+                nr, ng, nb = transform_color(
+                    (red, green, blue), source_anchors, target_anchors, max_error
+                )
                 mapping[(red, green, blue, alpha)] = (nr, ng, nb, alpha)
         rendered = Image.new("RGBA", image.size)
         rendered.putdata([mapping[pixel] for pixel in image.getdata()])
@@ -407,12 +485,24 @@ def render_template(template_name: str, theme_name: str, roles: dict[str, str]) 
 
 def set_wallpaper(path: Path) -> None:
     path = path.expanduser().resolve()
-    atomic_text(CFG / "hypr" / "hyprpaper.conf", f"preload = {path}\nwallpaper = , {path}\nsplash = false\n")
+    atomic_text(
+        CFG / "hypr" / "hyprpaper.conf",
+        f"preload = {path}\nwallpaper = , {path}\nsplash = false\n",
+    )
     if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
         return
-    for command in (["hyprctl", "hyprpaper", "unload", "all"], ["hyprctl", "hyprpaper", "preload", str(path)], ["hyprctl", "hyprpaper", "wallpaper", f",{path}"]):
+    for command in (
+        ["hyprctl", "hyprpaper", "unload", "all"],
+        ["hyprctl", "hyprpaper", "preload", str(path)],
+        ["hyprctl", "hyprpaper", "wallpaper", f",{path}"],
+    ):
         try:
-            subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            subprocess.run(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
         except FileNotFoundError:
             break
 
@@ -428,22 +518,37 @@ def copy_source_png(source: Path, destination: Path) -> None:
 def role_prompt(color: str, percent: float, suggested: str) -> str:
     while True:
         try:
-            entered = input(f"  {color}  {percent:6.2f}%  semantic role [{suggested}]: ").strip()
+            entered = input(
+                f"  {color}  {percent:6.2f}%  semantic role [{suggested}]: "
+            ).strip()
         except EOFError:
             entered = ""
         role = entered or suggested
         if re.fullmatch(r"[A-Za-z0-9_]+", role):
             return role
-        print("    use a role like bg, text, ansi_blue, accent, urgent", file=sys.stderr)
+        print(
+            "    use a role like bg, text, ansi_blue, accent, urgent", file=sys.stderr
+        )
 
 
-def import_template(image_path: Path, name: str, *, palette: str | None = None, max_regions: int = 12, min_percent: float = 0.25, accept_suggestions: bool = False, activate: bool = True) -> dict[str, Any]:
+def import_template(
+    image_path: Path,
+    name: str,
+    *,
+    palette: str | None = None,
+    max_regions: int = 12,
+    min_percent: float = 0.25,
+    accept_suggestions: bool = False,
+    activate: bool = True,
+) -> dict[str, Any]:
     image_path = image_path.expanduser().resolve()
     if not image_path.is_file():
         raise ValueError(f"image not found: {image_path}")
     name = safe_name(name)
     reference = load_theme(palette)[0] if palette else None
-    discovered = discover_regions(image_path, max_regions=max_regions, min_percent=min_percent)
+    discovered = discover_regions(
+        image_path, max_regions=max_regions, min_percent=min_percent
+    )
     if len(discovered) < 2:
         raise ValueError("could not find at least two semantic color regions")
     regions: list[dict[str, str]] = []
@@ -451,12 +556,22 @@ def import_template(image_path: Path, name: str, *, palette: str | None = None, 
     for item in discovered:
         color = item["color"]
         suggestion = suggest_role(color, reference)
-        role = suggestion if accept_suggestions else role_prompt(color, float(item["percent"]), suggestion)
+        role = (
+            suggestion
+            if accept_suggestions
+            else role_prompt(color, float(item["percent"]), suggestion)
+        )
         regions.append({"source": color, "role": role})
     root = user_template_path(name)
     root.mkdir(parents=True, exist_ok=True)
     copy_source_png(image_path, root / "source.png")
-    payload: dict[str, Any] = {"version": TEMPLATE_VERSION, "name": name, "source": "source.png", "regions": regions, "render": {"preserve_antialiasing": True, "max_blend_error": 14.0}}
+    payload: dict[str, Any] = {
+        "version": TEMPLATE_VERSION,
+        "name": name,
+        "source": "source.png",
+        "regions": regions,
+        "render": {"preserve_antialiasing": True, "max_blend_error": 14.0},
+    }
     if palette:
         payload["imported_from_palette"] = safe_name(palette)
     atomic_json(root / "template.json", payload)
@@ -504,7 +619,15 @@ def semantic_main(args: list[str]) -> int:
         return 0
     if ns.action == "import":
         name = ns.name or safe_name(ns.image.stem)
-        payload = import_template(ns.image, name, palette=ns.palette, max_regions=ns.max_regions, min_percent=ns.min_percent, accept_suggestions=ns.yes, activate=not ns.no_use)
+        payload = import_template(
+            ns.image,
+            name,
+            palette=ns.palette,
+            max_regions=ns.max_regions,
+            min_percent=ns.min_percent,
+            accept_suggestions=ns.yes,
+            activate=not ns.no_use,
+        )
         print(f"imported wallpaper template '{payload['name']}'")
         return 0
     if ns.action == "apply":
@@ -537,10 +660,16 @@ def classic_main(argv: list[str]) -> int:
 def main() -> int:
     argv = sys.argv[1:]
     try:
+        if argv and argv[0] in ("-h", "--help"):
+            print(__doc__)
+            return 0
         if argv and argv[0] == "semantic":
             return semantic_main(argv[1:])
         return classic_main(argv)
-    except (ValueError, OSError, json.JSONDecodeError) as exc:
+    except KeyboardInterrupt:
+        print("wallgen: interrupted", file=sys.stderr)
+        return 130
+    except (ValueError, TypeError, OSError, json.JSONDecodeError) as exc:
         print(f"wallgen: {exc}", file=sys.stderr)
         return 2
 

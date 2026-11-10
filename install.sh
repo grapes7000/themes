@@ -60,17 +60,36 @@ bash "$REPO/tools/unpack-theme-studio.sh" "$STUDIO_TMP" >/dev/null
 # Keep these outside the older Studio bundle so upgrades receive palette fixes.
 install -m755 "$REPO/bin/theme" "$HOME/.local/bin/theme-legacy"
 install -m755 "$REPO/bin/theme-studio" "$HOME/.local/bin/theme"
-for t in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image theme-qt-install; do
+for t in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image theme-qt-install ui-style; do
     install -m755 "$REPO/bin/$t" "$HOME/.local/bin/$t"
 done
-for module in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py theme_ui.py theme_qt_app.py theme_qt_bridge.py theme_qt_theme_engine.py; do
+for module in theme_starship.py theme_effects.py theme_motion.py theme_homepage.py theme_editor.py theme_runtime.py theme_ui.py theme_qt_app.py theme_qt_bridge.py theme_qt_theme_engine.py theme_schema.py theme_preview.py theme_components.py theme_tui_widgets.py theme_tui.py; do
     install -m644 "$REPO/bin/$module" "$HOME/.local/bin/$module"
 done
-mkdir -p "$CFG/theme-engine/ui-styles"
-install -m644 "$REPO"/ui-styles/*.json "$CFG/theme-engine/ui-styles/"
-for module in theme_schema.py theme_preview.py theme_components.py theme_tui_widgets.py theme_tui.py; do
-    install -m644 "$STUDIO_TMP/$module" "$HOME/.local/bin/$module"
+mkdir -p "$CFG/theme-engine/ui-styles/bundled" "$CFG/theme-engine/ui-styles/custom"
+for profile in "$CFG"/theme-engine/ui-styles/*.json; do
+    [ -f "$profile" ] || continue
+    name="$(basename "$profile")"
+    previous="$REPO/ui-styles/previous/$name"
+    custom="$CFG/theme-engine/ui-styles/custom/$name"
+    if [ ! -e "$custom" ] && { [ ! -f "$previous" ] || ! cmp -s "$profile" "$previous"; }; then
+        cp -n "$profile" "$custom"
+    fi
 done
+install -m644 "$REPO"/ui-styles/*.json "$CFG/theme-engine/ui-styles/bundled/"
+if [ ! -f "$CFG/theme-engine/ui-style" ] && [ -f "$CFG/theme-engine/generated/ui-style.json" ]; then
+    old_style="$(python3 -c 'import json, pathlib, re, sys
+try:
+    data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+    name = data.get("name", "")
+    if "resolved_from" not in data and isinstance(name, str) and re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name):
+        print(name)
+except (OSError, ValueError, AttributeError):
+    pass' "$CFG/theme-engine/generated/ui-style.json")"
+    if [ -n "$old_style" ] && { [ -f "$CFG/theme-engine/ui-styles/custom/$old_style.json" ] || [ -f "$CFG/theme-engine/ui-styles/bundled/$old_style.json" ]; }; then
+        printf '%s\n' "$old_style" > "$CFG/theme-engine/ui-style"
+    fi
+fi
 mkdir -p "$HOME/.local/share/doc/theme-studio"
 install -m644 "$STUDIO_TMP/THEME-STUDIO.md" "$HOME/.local/share/doc/theme-studio/README.md"
 install -m644 "$STUDIO_TMP/Theme-Studio-TUI-Design-Plan.md" "$HOME/.local/share/doc/theme-studio/Design-Plan.md"

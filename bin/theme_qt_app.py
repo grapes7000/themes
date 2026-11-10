@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
 """PySide6/QML entrypoint for Theme Studio."""
+
 from __future__ import annotations
 
 import argparse
@@ -10,7 +10,6 @@ from pathlib import Path
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
-
 from theme_qt_bridge import ThemeStudioBridge
 from theme_qt_theme_engine import ThemeBridge
 
@@ -25,7 +24,9 @@ def _qml_path() -> Path:
     if source_checkout.exists():
         return source_checkout
 
-    installed = Path.home() / ".local" / "share" / "theme-studio" / "qt" / "qml" / "Main.qml"
+    installed = (
+        Path.home() / ".local" / "share" / "theme-studio" / "qt" / "qml" / "Main.qml"
+    )
     return installed
 
 

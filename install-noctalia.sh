@@ -50,10 +50,10 @@ bash "$REPO/tools/unpack-theme-studio.sh" "$STUDIO_TMP" >/dev/null
   echo "$HOME/.local/bin/theme"
   echo "$HOME/.local/bin/theme-studio"
   echo "$HOME/.local/bin/theme-legacy"
-  for name in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image theme-noctalia theme-noctalia-uninstall; do
+  for name in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image theme-noctalia theme-noctalia-uninstall theme-qt-install ui-style; do
     echo "$HOME/.local/bin/$name"
   done
-  for name in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py theme_schema.py theme_preview.py theme_components.py theme_tui_widgets.py theme_tui.py; do
+  for name in theme_starship.py theme_effects.py theme_motion.py theme_homepage.py theme_editor.py theme_runtime.py theme_ui.py theme_qt_app.py theme_qt_bridge.py theme_qt_theme_engine.py theme_schema.py theme_preview.py theme_components.py theme_tui_widgets.py theme_tui.py; do
     echo "$HOME/.local/bin/$name"
   done
   echo "$HOME/.config/hypr/themes"
@@ -62,6 +62,10 @@ bash "$REPO/tools/unpack-theme-studio.sh" "$STUDIO_TMP" >/dev/null
   echo "$HOME/.config/hypr/hyprland.conf"
   echo "$HOME/.config/hypr/hyprpaper.conf"
   echo "$HOME/.config/theme-engine/targets.conf"
+  echo "$HOME/.config/theme-engine/ui-styles"
+  echo "$HOME/.config/theme-engine/ui-style"
+  echo "$HOME/.config/theme-engine/generated"
+  echo "$HOME/.local/share/theme-studio/qt"
   echo "$HOME/.config/kitty/kitty.conf"
   echo "$HOME/.config/kitty/generated"
   echo "$HOME/.config/starship.toml"
@@ -112,17 +116,29 @@ cp "$REPO"/wallpapers/*.png "$CFG/hypr/wallpapers/" 2>/dev/null || true
 install -m755 "$REPO/bin/theme" "$HOME/.local/bin/theme-legacy"
 install -m755 "$REPO/bin/theme-studio" "$HOME/.local/bin/theme"
 install -m755 "$REPO/bin/theme-studio" "$HOME/.local/bin/theme-studio"
-for name in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image; do
+for name in theme-new theme-menu theme-uninstall wallgen starship-config theme-pywalfox theme-stylus theme-from-image theme-qt-install ui-style; do
   install -m755 "$REPO/bin/$name" "$HOME/.local/bin/$name"
 done
 install -m755 "$REPO/bin/theme-noctalia" "$HOME/.local/bin/theme-noctalia"
 install -m755 "$REPO/bin/theme-noctalia-uninstall" "$HOME/.local/bin/theme-noctalia-uninstall"
-for name in theme_starship.py theme_effects.py theme_homepage.py theme_editor.py theme_runtime.py; do
+for name in theme_starship.py theme_effects.py theme_motion.py theme_homepage.py theme_editor.py theme_runtime.py theme_ui.py theme_qt_app.py theme_qt_bridge.py theme_qt_theme_engine.py; do
   install -m644 "$REPO/bin/$name" "$HOME/.local/bin/$name"
 done
 for name in theme_schema.py theme_preview.py theme_components.py theme_tui_widgets.py theme_tui.py; do
-  install -m644 "$STUDIO_TMP/$name" "$HOME/.local/bin/$name"
+  install -m644 "$REPO/bin/$name" "$HOME/.local/bin/$name"
 done
+mkdir -p "$CFG/theme-engine/ui-styles/bundled" "$CFG/theme-engine/ui-styles/custom" "$HOME/.local/share/theme-studio/qt/qml"
+for profile in "$CFG"/theme-engine/ui-styles/*.json; do
+  [ -f "$profile" ] || continue
+  name="$(basename "$profile")"
+  previous="$REPO/ui-styles/previous/$name"
+  custom="$CFG/theme-engine/ui-styles/custom/$name"
+  if [ ! -e "$custom" ] && { [ ! -f "$previous" ] || ! cmp -s "$profile" "$previous"; }; then
+    cp -n "$profile" "$custom"
+  fi
+done
+install -m644 "$REPO"/ui-styles/*.json "$CFG/theme-engine/ui-styles/bundled/"
+cp -R "$REPO"/qt-theme-studio/qml/. "$HOME/.local/share/theme-studio/qt/qml/"
 install -m644 "$STUDIO_TMP/THEME-STUDIO.md" "$HOME/.local/share/doc/theme-studio/README.md"
 
 # Theme Engine owns deep app/compositor theming. No Eww/Dunst/Hyprlock
