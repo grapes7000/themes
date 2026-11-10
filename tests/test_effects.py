@@ -1,16 +1,12 @@
 """Tests for the effects-profile system (theme_effects module)."""
 
-import importlib.machinery
-import importlib.util
 import json
 import os
 import sys
-import tempfile
-
-import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bin"))
 import theme_effects
+import theme_runtime
 
 SAMPLE_STYLE = {
     "corner_radius": 14,
@@ -121,7 +117,7 @@ class TestResolve:
     def test_no_mutation(self):
         original = dict(SAMPLE_STYLE)
         theme_effects.resolve(SAMPLE_STYLE, "sharp", "frosted")
-        assert SAMPLE_STYLE == original
+        assert original == SAMPLE_STYLE
 
     def test_texture_merges_style_keys(self):
         result = theme_effects.resolve(SAMPLE_STYLE, None, "clear")
@@ -190,6 +186,31 @@ class TestRenderAnimations:
         lines = theme_effects.render_animations("bouncy")
         text = "\n".join(lines)
         assert "popin" in text
+
+    def test_borderangle_presets_do_not_loop_continuously(self):
+        for name in ("dramatic", "glitch"):
+            text = "\n".join(theme_effects.render_animations(name))
+            assert "animation = borderangle" in text
+            assert "animation = borderangle, 1," in text
+            assert ", loop" not in text
+
+    def test_theme_animation_preset_ignores_legacy_global_motion_profile(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(theme_effects, "PROFILE_PATH", str(tmp_path / "effects.json"))
+        theme_effects.save_anim("glitch")
+        theme_path = os.path.join(
+            os.path.dirname(__file__), "..", "themes", "catppuccin_frappe.json"
+        )
+        with open(theme_path, encoding="utf-8") as handle:
+            theme = json.load(handle)
+        theme["style"]["animation_preset"] = "smooth"
+
+        rendered = theme_runtime._render_hypr_lua(theme, "catppuccin_frappe")
+
+        assert 'leaf = "borderangle"' in rendered
+        assert 'style = "loop"' not in rendered
+        assert 'bezier = "ease"' in rendered
 
     def test_each_anim_valid_syntax(self):
         for name in theme_effects.list_anims():
@@ -279,6 +300,7 @@ class TestGenHyprIntegration:
 
     @staticmethod
     def _load_theme_module():
+        import importlib.machinery
         import importlib.util
 
         theme_path = os.path.join(os.path.dirname(__file__), "..", "bin", "theme")

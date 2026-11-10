@@ -305,10 +305,7 @@ def _render_hypr_lua(theme: dict[str, Any], name: str, *, preview: bool = False)
         "    },",
         "})",
     ]
-    animation = str(
-        (None if preview else theme_effects.profile_anim())
-        or style.get("animation_preset", "smooth")
-    )
+    animation = str(style.get("animation_preset", "smooth"))
     preset = theme_effects.ANIMS.get(animation, theme_effects.ANIMS["smooth"])
     preset_lines = preset["lines"]
     if isinstance(preset_lines, list):
@@ -345,7 +342,7 @@ def _run_legacy(name: str) -> tuple[bool, str]:
     command = legacy_command()
     if not command:
         return False, "legacy generator not found"
-    proc = subprocess.run(command + [name], text=True, capture_output=True, check=False)
+    proc = subprocess.run([*command, name], text=True, capture_output=True, check=False)
     message = (proc.stdout or proc.stderr or "").strip()
     return proc.returncode == 0, message
 
@@ -385,7 +382,7 @@ def _sync_semantic_wallpaper(name: str) -> tuple[bool, str]:
     if not command:
         return False, ""
     proc = subprocess.run(
-        command + ["semantic", "apply", name, "--set"],
+        [*command, "semantic", "apply", name, "--set"],
         text=True,
         capture_output=True,
         check=False,
@@ -662,7 +659,7 @@ def _sync_noctalia(name: str) -> tuple[bool, str]:
         return False, ""
     try:
         proc = subprocess.run(
-            command + ["apply", name], text=True, capture_output=True, check=False
+            [*command, "apply", name], text=True, capture_output=True, check=False
         )
     except OSError as exc:
         return False, f"Noctalia sync skipped: {exc}"

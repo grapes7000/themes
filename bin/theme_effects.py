@@ -8,6 +8,7 @@ Three independent axes:
 All are optional and stored independently in effects.json.
 """
 
+import contextlib
 import json
 import os
 import tempfile
@@ -222,7 +223,7 @@ ANIMS = {
             "animation = workspaces, 1, 7, cinematic, slidefade 60%",
             "animation = specialWorkspace, 1, 6, cinematic, slidefadevert 40%",
             "animation = border, 1, 8, cinematic",
-            "animation = borderangle, 1, 40, cinematic, loop",
+            "animation = borderangle, 1, 40, cinematic",
         ],
     },
     "glitch": {
@@ -239,7 +240,7 @@ ANIMS = {
             "animation = workspaces, 1, 2, spike, slidefade 80%",
             "animation = specialWorkspace, 1, 2, spike, slidefadevert 80%",
             "animation = border, 1, 3, spike",
-            "animation = borderangle, 1, 20, spike, loop",
+            "animation = borderangle, 1, 20, spike",
         ],
     },
     "custom": {"enabled": True, "lines": []},
@@ -294,10 +295,8 @@ def _save_profile_raw(data):
             f.write("\n")
         os.replace(tmp, PROFILE_PATH)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise
 
 
@@ -476,7 +475,6 @@ def render_animations(anim_name, style=None):
         "animations {",
         "    enabled = true",
     ]
-    for anim_line in resolved:
-        lines.append(f"    {anim_line}")
+    lines.extend(f"    {anim_line}" for anim_line in resolved)
     lines.append("}")
     return lines
